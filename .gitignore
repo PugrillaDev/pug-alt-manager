@@ -1,0 +1,41 @@
+# Gradle and build output
+.gradle/
+build/
+out/
+
+# Minecraft development runtime
+run/
+run-test-appdata/
+
+# IDE metadata
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+bin/
+
+# Logs, crash reports, and local configuration
+*.log
+crash-reports/
+logs/
+options.txt
+servers.dat
+
+# Decompiled and reverse-engineering work products
+case-sensitive/
+decompiled-*/
+input/
+raw/
+reference/
+tools/
+
+# Binary artifacts (the Gradle wrapper is intentionally tracked)
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+*.zip
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,8 @@
+{
+  "required": true,
+  "compatibilityLevel": "JAVA_8",
+  "verbose": true,
+  "package": "dev.pugrilla.altmanager.mixin",
+  "refmap": "mixins.altmanager.refmap.json",
+  "mixins": []
+}

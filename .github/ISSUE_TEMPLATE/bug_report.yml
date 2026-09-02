@@ -1,0 +1,53 @@
+name: Bug report
+description: Report a reproducible problem in the reconstructed mod
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: Do not include passwords, cookies, tokens, sessions, share codes, or account database files.
+  - type: input
+    id: version
+    attributes:
+      label: Mod version
+      placeholder: "1.0"
+    validations:
+      required: true
+  - type: input
+    id: forge
+    attributes:
+      label: Forge version
+      placeholder: "11.15.1.2318"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Open...
+        2. Select...
+        3. Observe...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs
+      description: Remove all credentials and personal account data before attaching logs.
+      render: text
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Sensitive-data check
+      options:
+        - label: I removed credentials, tokens, cookies, sessions, and personal account data.
+          required: true

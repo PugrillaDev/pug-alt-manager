@@ -1,0 +1,16 @@
+[
+{
+  "modid": "pugaltmanager",
+  "name": "Pug Alt Manager",
+  "description": "A Minecraft account manager maintained by PugrillaDev.",
+  "version": "${version}",
+  "mcversion": "1.8.9",
+  "url": "https://github.com/PugrillaDev/pug-alt-manager",
+  "updateUrl": "",
+  "authorList": ["PugrillaDev"],
+  "credits": "Reconstructed from Mic's Alt Manager 1.0; see NOTICE.md for provenance.",
+  "logoFile": "",
+  "screenshots": [],
+  "dependencies": []
+}
+]

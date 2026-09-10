@@ -30,13 +30,14 @@ import java.util.UUID;
 import java.util.Map.Entry;
 import net.minecraft.client.Minecraft;
 public final class FileStorageManager implements StorageManager {
-   private static final int STORAGE_VERSION = 0;
+   private static final int STORAGE_VERSION = 1;
    private static final int STORAGE_MAGIC = 15837929;
    private static final String STORAGE_DIRECTORY_NAME = ".pugaltmanager";
    private static final String LEGACY_STORAGE_DIRECTORY_NAME = ".micsaltman";
    private final AltManager altManager;
    private final File storageDirectory;
    private final File accountsFile;
+   private final File accountsBackupFile;
    private final List<AccountRepository> repositories = new ArrayList<>();
    private final List<AccountRepository> readOnlyRepositories = Collections.unmodifiableList(this.repositories);
    private Long autoSaveRequestedAt;
@@ -53,6 +54,7 @@ public final class FileStorageManager implements StorageManager {
    private SkinVariant skinVariant = SkinVariant.CLASSIC;
    private AccountSortMode accountSortMode = AccountSortMode.values()[0];
    private String searchTerm = "";
+   private int loadedStorageVersion = STORAGE_VERSION;
 
    public FileStorageManager(AltManager altmanager) {
       this.altManager = altmanager;
@@ -65,6 +67,7 @@ public final class FileStorageManager implements StorageManager {
       this.migrateLegacyStorage(new File(appDataDirectory, LEGACY_STORAGE_DIRECTORY_NAME));
 
       this.accountsFile = new File(this.storageDirectory, "accounts.dat");
+      this.accountsBackupFile = new File(this.storageDirectory, "accounts.dat.backup");
 
       try {
          this.load();
@@ -74,11 +77,19 @@ public final class FileStorageManager implements StorageManager {
          );
       }
 
-      try {
-         if (!this.repositories.isEmpty()) {
-            Files.copy(this.accountsFile.toPath(), new File(this.storageDirectory, "accounts.dat.backup").toPath(), StandardCopyOption.REPLACE_EXISTING);
+      boolean loadedDataSafeToBackUp = this.isLoadedDataSafeToBackUp();
+      if (!loadedDataSafeToBackUp) {
+         try {
+            Files.deleteIfExists(this.accountsBackupFile.toPath());
+         } catch (IOException exception) {
+            throw new RuntimeException("Could not remove a legacy backup containing plaintext access tokens", exception);
          }
-      } catch (Throwable throwable) {
+      } else if (!this.repositories.isEmpty()) {
+         try {
+            Files.copy(this.accountsFile.toPath(), this.accountsBackupFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+         } catch (IOException exception) {
+            this.altManager.getLogger().warn("Could not update the account database backup", exception);
+         }
       }
 
       this.loaded = true;
@@ -106,6 +117,20 @@ public final class FileStorageManager implements StorageManager {
             this.altManager.getLogger().warn("Could not migrate legacy storage file " + fileName, migrationFailure);
          }
       }
+   }
+
+   private boolean isLoadedDataSafeToBackUp() {
+      if (this.loadedStorageVersion >= 1) {
+         return true;
+      }
+
+      for (AccountRepository repository : this.repositories) {
+         if (repository.getEncryption().isEnabled()) {
+            return false;
+         }
+      }
+
+      return true;
    }
 
    private void startPeriodicAutoSaveThread() {
@@ -163,9 +188,11 @@ public final class FileStorageManager implements StorageManager {
       }
 
       int j = datainputstream.readInt();
-      if (j > 0) {
-         throw new IOException(String.format("Loading accounts from a newer version: %d, current is %d", j, 0));
+      if (j < 0 || j > STORAGE_VERSION) {
+         throw new IOException(String.format("Loading accounts from an incompatible version: %d, current is %d", j, STORAGE_VERSION));
       }
+
+      this.loadedStorageVersion = j;
 
       long k = datainputstream.readLong();
       this.selectedAddAccountType = AccountType.values()[datainputstream.readUnsignedByte()];
@@ -178,7 +205,7 @@ public final class FileStorageManager implements StorageManager {
       int i1 = datainputstream.readInt();
 
       for (int j1 = 0; j1 < i1; j1++) {
-         AccountRepository AccountRepository = readRepository(this.altManager, datainputstream);
+         AccountRepository AccountRepository = readRepository(this.altManager, datainputstream, j);
          this.repositories.add(AccountRepository);
          if (j1 == l) {
             this.setSelectedRepository(AccountRepository);
@@ -200,7 +227,7 @@ public final class FileStorageManager implements StorageManager {
       this.multiplayerButtonVisible = datainputstream.readBoolean();
       this.showLoggedInUser = datainputstream.readBoolean();
    }
-   public static AccountRepository readRepository(AltManager altmanager, DataInputStream datainputstream) throws IOException {
+   public static AccountRepository readRepository(AltManager altmanager, DataInputStream datainputstream, int formatVersion) throws IOException {
       RepositoryEncryption RepositoryEncryption = new RepositoryEncryption(datainputstream.readBoolean());
       if (RepositoryEncryption.isEnabled()) {
          RepositoryEncryption.setTestString(datainputstream.readUTF());
@@ -238,7 +265,7 @@ public final class FileStorageManager implements StorageManager {
          AbstractAccount.setCreationTime(i1);
          AbstractAccount.setLastRefresh(j1);
          AccountRepository.addAccount(AbstractAccount);
-         AbstractAccount.deserializeDataFromBytes(abyte);
+         AbstractAccount.deserializeDataFromBytes(abyte, formatVersion >= 1 && RepositoryEncryption.isEnabled());
          if (i == k) {
             AccountRepository.setSelectedAccount(AbstractAccount);
          }
@@ -246,7 +273,7 @@ public final class FileStorageManager implements StorageManager {
 
       return AccountRepository;
    }
-   public static void writeRepository(AccountRepository AccountRepository, DataOutputStream dataoutputstream) throws IOException {
+   public static void writeRepository(AccountRepository AccountRepository, DataOutputStream dataoutputstream, int formatVersion) throws IOException {
       dataoutputstream.writeBoolean(AccountRepository.getEncryption().isEnabled());
       if (AccountRepository.getEncryption().isEnabled()) {
          dataoutputstream.writeUTF(AccountRepository.getEncryption().getTestString());
@@ -260,15 +287,16 @@ public final class FileStorageManager implements StorageManager {
       dataoutputstream.writeInt(list.size());
 
       for (AbstractAccount AbstractAccount : list) {
+         boolean protectAccessToken = formatVersion >= 1 && AccountRepository.getEncryption().isEnabled();
          dataoutputstream.writeByte(AbstractAccount.getAccountType().ordinal());
          dataoutputstream.writeUTF(AbstractAccount.getUsername());
          dataoutputstream.writeLong(AbstractAccount.getUuid().getMostSignificantBits());
          dataoutputstream.writeLong(AbstractAccount.getUuid().getLeastSignificantBits());
-         dataoutputstream.writeUTF(AbstractAccount.getAccessToken());
+         dataoutputstream.writeUTF(protectAccessToken ? "" : AbstractAccount.getAccessToken());
          dataoutputstream.writeLong(AbstractAccount.getLastUsed());
          dataoutputstream.writeLong(AbstractAccount.getCreationTime());
          dataoutputstream.writeLong(AbstractAccount.getLastRefresh());
-         byte[] abyte = AbstractAccount.serializeDataToBytes();
+         byte[] abyte = AbstractAccount.serializeDataToBytes(protectAccessToken);
          dataoutputstream.writeInt(abyte.length);
          dataoutputstream.write(abyte);
       }
@@ -284,9 +312,26 @@ public final class FileStorageManager implements StorageManager {
 
    public void save() throws IOException {
       byte[] abyte = this.toBytes();
-      FileOutputStream fileoutputstream = new FileOutputStream(new File(this.storageDirectory, "accounts.dat"));
-      fileoutputstream.write(abyte);
-      fileoutputstream.close();
+      File temporaryFile = File.createTempFile("accounts-", ".tmp", this.storageDirectory);
+
+      try {
+         try (FileOutputStream fileoutputstream = new FileOutputStream(temporaryFile)) {
+            fileoutputstream.write(abyte);
+         }
+
+         try {
+            Files.move(temporaryFile.toPath(), this.accountsFile.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+         } catch (IOException atomicMoveFailure) {
+            Files.move(temporaryFile.toPath(), this.accountsFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+         }
+      } finally {
+         if (temporaryFile.exists() && !temporaryFile.delete()) {
+            temporaryFile.deleteOnExit();
+         }
+      }
+
+      this.loadedStorageVersion = STORAGE_VERSION;
+      Files.copy(this.accountsFile.toPath(), this.accountsBackupFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
       this.autoSaveRequestedAt = null;
    }
 
@@ -298,7 +343,7 @@ public final class FileStorageManager implements StorageManager {
       ByteArrayOutputStream bytearrayoutputstream = new ByteArrayOutputStream();
       DataOutputStream dataoutputstream = new DataOutputStream(bytearrayoutputstream);
       dataoutputstream.writeInt(15837929);
-      dataoutputstream.writeInt(0);
+      dataoutputstream.writeInt(STORAGE_VERSION);
       dataoutputstream.writeLong(System.currentTimeMillis());
       dataoutputstream.writeByte(this.selectedAddAccountType.ordinal());
       dataoutputstream.writeUTF(this.lastCookieFilePath);
@@ -310,7 +355,7 @@ public final class FileStorageManager implements StorageManager {
       dataoutputstream.writeInt(this.repositories.size());
 
       for (AccountRepository AccountRepository : this.repositories) {
-         writeRepository(AccountRepository, dataoutputstream);
+         writeRepository(AccountRepository, dataoutputstream, STORAGE_VERSION);
       }
 
       dataoutputstream.writeInt(this.banExpiries.size());

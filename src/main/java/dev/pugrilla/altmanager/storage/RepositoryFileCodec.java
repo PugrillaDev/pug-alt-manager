@@ -14,7 +14,7 @@ import java.util.UUID;
 import java.util.Map.Entry;
 public final class RepositoryFileCodec {
    private static final int REPOSITORY_FILE_MAGIC = 256243359;
-   private static final int REPOSITORY_FILE_VERSION = 0;
+   private static final int REPOSITORY_FILE_VERSION = 1;
    public static void importRepository(AltManager altmanager, byte[] abyte) throws IOException {
       DataInputStream datainputstream = new DataInputStream(new ByteArrayInputStream(abyte));
       int i = datainputstream.readInt();
@@ -23,8 +23,8 @@ public final class RepositoryFileCodec {
       }
 
       int j = datainputstream.readInt();
-      if (j >= 0 && j <= 0) {
-         AccountRepository AccountRepository = FileStorageManager.readRepository(altmanager, datainputstream);
+      if (j >= 0 && j <= REPOSITORY_FILE_VERSION) {
+         AccountRepository AccountRepository = FileStorageManager.readRepository(altmanager, datainputstream, j);
          altmanager.getStorageManager().createRepository(AccountRepository);
          int k = datainputstream.readInt();
 
@@ -37,15 +37,15 @@ public final class RepositoryFileCodec {
             }
          }
       } else {
-         throw new IOException("Incompatible repository file version: " + j + ", current is " + 0);
+         throw new IOException("Incompatible repository file version: " + j + ", current is " + REPOSITORY_FILE_VERSION);
       }
    }
    public static byte[] exportRepository(AccountRepository AccountRepository) throws IOException {
       ByteArrayOutputStream bytearrayoutputstream = new ByteArrayOutputStream();
       DataOutputStream dataoutputstream = new DataOutputStream(bytearrayoutputstream);
       dataoutputstream.writeInt(256243359);
-      dataoutputstream.writeInt(0);
-      FileStorageManager.writeRepository(AccountRepository, dataoutputstream);
+      dataoutputstream.writeInt(REPOSITORY_FILE_VERSION);
+      FileStorageManager.writeRepository(AccountRepository, dataoutputstream, REPOSITORY_FILE_VERSION);
       HashMap<UUID, Long> hashmap = new HashMap<>();
 
       for (AbstractAccount AbstractAccount : AccountRepository.getAccountList()) {

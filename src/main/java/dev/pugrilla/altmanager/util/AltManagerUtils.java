@@ -5,6 +5,7 @@ import com.mojang.util.UUIDTypeAdapter;
 import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.text.SimpleDateFormat;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
@@ -16,6 +17,7 @@ import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
+import net.minecraft.client.gui.GuiTextField;
 public final class AltManagerUtils {
    public static final Pattern MINECRAFT_USERNAME_PATTERN = Pattern.compile("^(?!_)(?!.*__)(?!.*_$)[a-zA-Z0-9_]{3,16}(?<!_)$");
    public static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd");
@@ -120,6 +122,29 @@ public final class AltManagerUtils {
    }
    public static void setClipboardText(String s) {
       GuiScreen.setClipboardString(s);
+   }
+   public static void drawPasswordField(GuiTextField field) {
+      String password = field.getText();
+      if (password.isEmpty()) {
+         field.drawTextBox();
+         return;
+      }
+
+      int cursorPosition = field.getCursorPosition();
+      int selectionEnd = field.getSelectionEnd();
+      char[] mask = new char[password.length()];
+      Arrays.fill(mask, '*');
+
+      try {
+         field.setText(new String(mask));
+         field.setCursorPosition(cursorPosition);
+         field.setSelectionPos(selectionEnd);
+         field.drawTextBox();
+      } finally {
+         field.setText(password);
+         field.setCursorPosition(cursorPosition);
+         field.setSelectionPos(selectionEnd);
+      }
    }
    public static String encryptString(String s) {
       try {

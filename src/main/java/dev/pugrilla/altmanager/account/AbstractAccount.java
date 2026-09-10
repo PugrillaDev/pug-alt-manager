@@ -48,6 +48,7 @@ public abstract class AbstractAccount implements IGuiListEntry {
    private long lastClickTime;
    private boolean doubleClickActionRunning;
    private byte[] pendingEncryptedData;
+   private boolean pendingDataContainsAccessToken;
 
    protected AbstractAccount(AccountType AccountType, String s, UUID uuid, String s1) {
       this.accountType = AccountType;
@@ -357,34 +358,64 @@ public abstract class AbstractAccount implements IGuiListEntry {
    public final void decryptIfWaitingPassword() throws IOException {
       byte[] abyte = this.pendingEncryptedData;
       if (abyte != null) {
+         boolean containsAccessToken = this.pendingDataContainsAccessToken;
          this.pendingEncryptedData = null;
-         this.deserializeDataFromBytes(abyte);
+         this.pendingDataContainsAccessToken = false;
+
+         try {
+            this.deserializeDataFromBytes(abyte, containsAccessToken);
+         } catch (IOException | RuntimeException exception) {
+            this.pendingEncryptedData = abyte;
+            this.pendingDataContainsAccessToken = containsAccessToken;
+            throw exception;
+         }
       }
    }
 
    public final void deserializeDataFromBytes(byte[] abyte) throws IOException {
+      this.deserializeDataFromBytes(abyte, false);
+   }
+
+   public final void deserializeDataFromBytes(byte[] abyte, boolean containsAccessToken) throws IOException {
       if (this.pendingEncryptedData != null) {
          throw new RuntimeException("Attempted to deserialize while waiting for decryption");
       }
 
       if (!this.repository.getEncryption().isDecrypted()) {
          this.pendingEncryptedData = abyte;
+         this.pendingDataContainsAccessToken = containsAccessToken;
       } else {
-         this.deserialize(new DataInputStream(new ByteArrayInputStream(this.repository.getEncryption().decryptRaw(abyte))));
+         DataInputStream input = new DataInputStream(new ByteArrayInputStream(this.repository.getEncryption().decryptRaw(abyte)));
+         if (containsAccessToken) {
+            this.accessToken = input.readUTF();
+         }
+
+         this.deserialize(input);
       }
    }
 
    public final byte[] serializeDataToBytes() throws IOException {
+      return this.serializeDataToBytes(false);
+   }
+
+   public final byte[] serializeDataToBytes(boolean includeAccessToken) throws IOException {
       if (!this.repository.getEncryption().isDecrypted()) {
          byte[] abyte1 = this.pendingEncryptedData;
          if (abyte1 == null) {
             throw new RuntimeException("Tried to serialize encrypted account but never received encrypted data");
+         } else if (this.pendingDataContainsAccessToken != includeAccessToken) {
+            throw new IOException("Unlock this legacy encrypted repository before saving it in the current format");
          } else {
             return abyte1;
          }
       } else {
          ByteArrayOutputStream bytearrayoutputstream = new ByteArrayOutputStream();
-         this.serialize(new DataOutputStream(bytearrayoutputstream));
+         DataOutputStream output = new DataOutputStream(bytearrayoutputstream);
+         if (includeAccessToken) {
+            output.writeUTF(this.accessToken);
+         }
+
+         this.serialize(output);
          byte[] abyte = bytearrayoutputstream.toByteArray();
          return this.repository.getEncryption().encryptRaw(abyte);
       }

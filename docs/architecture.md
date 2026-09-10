@@ -26,9 +26,9 @@ Pug Alt Manager is a client-side Forge mod. Its code is organized beneath `dev.p
 
 ## Storage model
 
-The storage file is a versioned binary format with a magic header. It contains global preferences, repositories, account records, encrypted account payloads, ban-expiry entries, and UI selections. Repository export uses a separate versioned binary envelope.
+The storage file is a versioned binary format with a magic header. It contains global preferences, repositories, account records, encrypted account payloads, ban-expiry entries, and UI selections. For encrypted repositories, sensitive account-specific data—including Minecraft access tokens—is stored inside the password-encrypted payload; display metadata remains available for parsing. Repository export uses a separate versioned binary envelope with the same protection.
 
-The reconstruction intentionally preserves field order, enum ordinals, magic values, and encryption behavior so existing account databases remain compatible.
+Version-0 databases remain readable. A legacy encrypted repository is migrated to the protected version-1 layout after it is successfully unlocked, because secure migration requires its password-derived key. Unsafe version-0 backups are not retained.
 
 ## Threading model
 

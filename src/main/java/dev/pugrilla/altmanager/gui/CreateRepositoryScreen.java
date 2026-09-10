@@ -77,7 +77,7 @@ public final class CreateRepositoryScreen extends GuiScreen {
          this.passwordField.yPosition - 12,
          this.passwordField.getText().isEmpty() ? ColorUtils.darker(10526880) : 10526880
       );
-      this.passwordField.drawTextBox();
+      AltManagerUtils.drawPasswordField(this.passwordField);
       super.drawScreen(i, j, f);
    }
 

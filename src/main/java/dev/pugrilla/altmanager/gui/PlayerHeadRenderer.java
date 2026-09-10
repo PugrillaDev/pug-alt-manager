@@ -7,21 +7,21 @@ import com.mojang.authlib.minecraft.MinecraftProfileTexture;
 import com.mojang.authlib.minecraft.MinecraftProfileTexture.Type;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.resources.DefaultPlayerSkin;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.ResourceLocation;
 public final class PlayerHeadRenderer {
    private final String username;
    private final UUID uuid;
    private final AltManager altManager;
-   private ResourceLocation skinResource;
-   private MinecraftProfileTexture skinTexture;
-   private GameProfile gameProfile;
-   private boolean downloadStarted;
-   private boolean downloadComplete;
+   private volatile ResourceLocation skinResource;
+   private final AtomicBoolean downloadStarted = new AtomicBoolean();
+   private final AtomicInteger loadGeneration = new AtomicInteger();
+   private volatile boolean downloadComplete;
    private float alpha = 1.0F;
 
    public PlayerHeadRenderer(String s, UUID uuid, AltManager altmanager) {
@@ -53,41 +53,62 @@ public final class PlayerHeadRenderer {
    }
 
    public void ensureSkinDownloaded() {
-      Minecraft minecraft = Minecraft.getMinecraft();
-      if (!this.downloadComplete) {
-         if (!this.downloadStarted) {
-            this.altManager.getThreadPool().execute(() -> {
-               try {
-                  this.gameProfile = MinecraftServer.getServer()
-                     .getMinecraftSessionService()
-                     .fillProfileProperties(new GameProfile(this.uuid, this.username), true);
-               } catch (Throwable throwable) {
-                  this.downloadStarted = false;
-               }
-            });
-            this.downloadStarted = true;
+      if (this.downloadComplete || !this.downloadStarted.compareAndSet(false, true)) {
+         return;
+      }
+
+      int generation = this.loadGeneration.get();
+      try {
+         this.altManager.getThreadPool().execute(() -> this.loadSkinAsync(generation));
+      } catch (RuntimeException exception) {
+         if (generation == this.loadGeneration.get()) {
+            this.downloadComplete = true;
          }
 
-         if (this.gameProfile != null) {
-            Map map = minecraft.getSessionService().getTextures(this.gameProfile, false);
-            MinecraftProfileTexture minecraftprofiletexture = (MinecraftProfileTexture)map.get(Type.SKIN);
-            if (minecraftprofiletexture != null) {
-               this.skinTexture = minecraftprofiletexture;
-               this.loadSkin();
-               this.downloadComplete = true;
-            }
+         this.altManager.getLogger().debug("Could not schedule player skin loading", exception);
+      }
+   }
+
+   private void loadSkinAsync(int generation) {
+      try {
+         Minecraft minecraft = Minecraft.getMinecraft();
+         GameProfile profile = minecraft.getSessionService().fillProfileProperties(new GameProfile(this.uuid, this.username), true);
+         if (generation != this.loadGeneration.get()) {
+            return;
+         }
+
+         Map<Type, MinecraftProfileTexture> textures = minecraft.getSessionService().getTextures(profile, false);
+         MinecraftProfileTexture skinTexture = textures.get(Type.SKIN);
+         if (skinTexture != null) {
+            Minecraft.getMinecraft().addScheduledTask(() -> this.loadSkin(skinTexture, generation));
+         }
+      } catch (Throwable throwable) {
+         this.altManager.getLogger().debug("Using the default player skin after skin loading failed", throwable);
+      } finally {
+         if (generation == this.loadGeneration.get()) {
+            this.downloadComplete = true;
          }
       }
    }
 
-   private void loadSkin() {
-      Minecraft.getMinecraft().getSkinManager().loadSkin(this.skinTexture, Type.SKIN, (type, resource, texture) -> this.skinResource = resource);
+   private void loadSkin(MinecraftProfileTexture skinTexture, int generation) {
+      if (generation != this.loadGeneration.get()) {
+         return;
+      }
+
+      Minecraft.getMinecraft()
+         .getSkinManager()
+         .loadSkin(skinTexture, Type.SKIN, (type, resource, texture) -> {
+            if (generation == this.loadGeneration.get()) {
+               this.skinResource = resource;
+            }
+         });
    }
 
    public void resetSkin() {
+      this.loadGeneration.incrementAndGet();
       this.skinResource = null;
-      this.gameProfile = null;
-      this.downloadStarted = false;
+      this.downloadStarted.set(false);
       this.downloadComplete = false;
    }
 }

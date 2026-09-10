@@ -11,6 +11,10 @@ buildscript {
 
 apply plugin: 'net.minecraftforge.gradle.forge'
 
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+}
+
 version = project.modVersion
 group = project.mavenGroup
 archivesBaseName = project.artifactBaseName

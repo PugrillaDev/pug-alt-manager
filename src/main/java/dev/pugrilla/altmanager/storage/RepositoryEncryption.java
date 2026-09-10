@@ -106,7 +106,7 @@ public class RepositoryEncryption {
    }
 
    public void lock() {
-      if (!this.isDecrypted() && this.isEnabled()) {
+      if (this.isEnabled()) {
          this.key = null;
       }
    }

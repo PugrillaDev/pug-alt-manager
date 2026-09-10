@@ -5,6 +5,7 @@ import dev.pugrilla.altmanager.account.AccountRepository;
 import dev.pugrilla.altmanager.account.AccountSortMode;
 import dev.pugrilla.altmanager.AltManager;
 import dev.pugrilla.altmanager.storage.StorageManager;
+import dev.pugrilla.altmanager.util.AltManagerUtils;
 import dev.pugrilla.altmanager.util.ColorUtils;
 
 import java.awt.Color;
@@ -180,6 +181,8 @@ public final class AltManagerScreen extends GuiScreen {
                   for (AbstractAccount AbstractAccount : AccountRepository.getAccountList()) {
                      AbstractAccount.decryptIfWaitingPassword();
                   }
+
+                  this.altManager.getStorageManager().setAutoSaveRequired();
                } catch (Throwable throwable) {
                   AccountRepository.getEncryption().lock();
                   throwable.printStackTrace();
@@ -283,7 +286,7 @@ public final class AltManagerScreen extends GuiScreen {
       this.drawAccountManagerHeader("Pug Alt Manager", this.width);
       this.statusRenderer.draw(this.width / 2, 108);
       this.searchField.drawTextBox();
-      this.passwordField.drawTextBox();
+      AltManagerUtils.drawPasswordField(this.passwordField);
       if (this.hasMultiSelection()) {
          this.drawMultiSelection();
       }

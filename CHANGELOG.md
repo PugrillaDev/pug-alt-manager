@@ -2,6 +2,19 @@
 
 All notable changes to Pug Alt Manager are documented here.
 
+## Unreleased
+
+### Security
+
+- Protect Minecraft access tokens inside the password-encrypted account payload for encrypted repositories
+- Prevent plaintext-token legacy databases from being copied into new backups before migration
+- Mask repository creation and unlock password fields while they are rendered
+
+### Fixed
+
+- Stop retrying failed or unavailable player-skin requests every render cycle
+- Keep all profile and skin discovery work off the render thread
+
 ## 1.0 - 2026-09-02
 
 ### Added

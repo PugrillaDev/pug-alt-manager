@@ -2,7 +2,7 @@
 
 All notable changes to Pug Alt Manager are documented here.
 
-## Unreleased
+## 1.1 - 2026-09-10
 
 ### Security
 

@@ -12,4 +12,4 @@ Do not test authentication or account-management vulnerabilities against account
 
 ## Supported version
 
-Pug Alt Manager currently supports version 1.0 on Minecraft 1.8.9 with Forge 11.15.1.2318.
+Pug Alt Manager currently supports version 1.1 on Minecraft 1.8.9 with Forge 11.15.1.2318.

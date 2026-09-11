@@ -18,7 +18,7 @@ import org.apache.logging.log4j.Logger;
 public class AltManager {
    public static final String MOD_ID = "pugaltmanager";
    public static final String MOD_NAME = "Pug Alt Manager";
-   public static final String VERSION = "1.0";
+   public static final String VERSION = "1.1";
    public static final String MINECRAFT_VERSION_RANGE = "[1.8.9]";
 
    private final Logger logger = LogManager.getLogger(MOD_NAME);

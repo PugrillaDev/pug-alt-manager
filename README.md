@@ -33,8 +33,8 @@ $env:JAVA_HOME = 'C:\Program Files\Java\jdk-1.8'
 
 The production and source artifacts are generated in `build/libs/`:
 
-- `pug-alt-manager-1.0.jar`
-- `pug-alt-manager-1.0-sources.jar`
+- `pug-alt-manager-1.1.jar`
+- `pug-alt-manager-1.1-sources.jar`
 
 Convenience scripts are also available:
 

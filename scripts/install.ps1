@@ -12,7 +12,7 @@ if (-not $SkipBuild) {
    & (Join-Path $PSScriptRoot 'build.ps1') -Offline:$Offline
 }
 
-$artifact = Join-Path $projectRoot 'build\libs\pug-alt-manager-1.0.jar'
+$artifact = Join-Path $projectRoot 'build\libs\pug-alt-manager-1.1.jar'
 if (-not (Test-Path -LiteralPath $artifact)) {
    throw "Production artifact does not exist: $artifact"
 }

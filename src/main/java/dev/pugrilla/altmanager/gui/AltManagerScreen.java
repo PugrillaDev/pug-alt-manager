@@ -40,6 +40,7 @@ public final class AltManagerScreen extends GuiScreen {
    private GuiTextField passwordField;
    private GuiTextField searchField;
    private AccountRepository previousRepository;
+   private String rowStatusTooltip;
    private final StatusMessageRenderer statusRenderer = new StatusMessageRenderer();
    private List<AbstractAccount> multiSelectionAccounts = new ArrayList<>();
 
@@ -109,7 +110,7 @@ public final class AltManagerScreen extends GuiScreen {
             )
          );
       this.buttonList.add(this.sortButton = new GuiButton(12, 8, this.height - 28, 110, 20, ""));
-      this.accountList.setDimensions(this.width, this.height, 32, this.height - 60);
+      this.accountList.setDimensions(this.width, this.height, 32, this.height - 78);
       this.setButtonText();
       this.setButtonEnabledStatus();
    }
@@ -287,9 +288,10 @@ public final class AltManagerScreen extends GuiScreen {
 
    public void drawScreen(int i, int j, float f) {
       super.drawDefaultBackground();
+      this.rowStatusTooltip = null;
       this.accountList.drawScreen(i, j, f);
       this.drawAccountManagerHeader("Pug Alt Manager", this.width);
-      this.statusRenderer.draw(this.width / 2, 108);
+      this.statusRenderer.drawFooter(this.width / 2, this.height - 70, this.width - 16);
       this.searchField.drawTextBox();
       AltManagerUtils.drawPasswordField(this.passwordField);
       if (this.hasMultiSelection()) {
@@ -310,6 +312,13 @@ public final class AltManagerScreen extends GuiScreen {
       }
 
       super.drawScreen(i, j, f);
+      if (this.rowStatusTooltip != null) {
+         this.drawHoveringText(this.fontRendererObj.listFormattedStringToWidth(this.rowStatusTooltip, Math.max(120, this.width / 2)), i, j);
+      }
+   }
+
+   public void setRowStatusTooltip(String message) {
+      this.rowStatusTooltip = message;
    }
 
    public void updateScreen() {

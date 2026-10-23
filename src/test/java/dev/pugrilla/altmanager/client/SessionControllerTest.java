@@ -99,4 +99,92 @@ public class SessionControllerTest {
       clients.get(0).run();
       assertTrue(activated.isEmpty());
    }
+
+   @Test public void browsingSelectionDoesNotBecomeActiveOrChangePendingTarget() {
+      AbstractAccount requested = account("Requested");
+      AbstractAccount browsed = account("Browsing");
+      java.util.concurrent.atomic.AtomicReference<AbstractAccount> active = new java.util.concurrent.atomic.AtomicReference<>();
+      SessionController sessions = new SessionController(workers::add, clients::add,
+         (target, force) -> new LoginResult(target.createSessionObject(), LoginResponseType.SUCCESS),
+         (target, used) -> active.set(target), available::contains, target -> active.get() == target,
+         messages::add, failure -> fail(failure.toString()));
+      sessions.useAccount(requested, true, false);
+      assertTrue(sessions.getStatus(requested).isPending());
+      assertNull(sessions.getStatus(browsed));
+      assertFalse(sessions.isActive(requested));
+      assertFalse(sessions.isActive(browsed));
+      workers.get(0).run();
+      clients.get(0).run();
+      assertTrue(sessions.isActive(requested));
+      assertFalse(sessions.isActive(browsed));
+      assertNull(sessions.getStatus(requested));
+      assertTrue(messages.stream().noneMatch(message -> message.startsWith("Using ")));
+   }
+
+   @Test public void startingNewRequestRemovesObsoleteProgressFromOldRow() {
+      AbstractAccount first = account("A");
+      AbstractAccount second = account("B");
+      controller.useAccount(first, true, false);
+      controller.useAccount(second, true, false);
+      assertNull(controller.getStatus(first));
+      assertTrue(controller.getStatus(second).isPending());
+      workers.get(0).run();
+      clients.get(0).run();
+      assertNull(controller.getStatus(first));
+      assertTrue(controller.getStatus(second).isPending());
+   }
+
+   @Test public void authenticationFailureStaysOnRequestedRowAndPreservesActiveIdentity() {
+      AbstractAccount current = account("Current");
+      AbstractAccount failed = account("Failed");
+      SessionController sessions = new SessionController(workers::add, clients::add,
+         (target, force) -> new LoginResult(LoginResponseType.INVALID_ACCOUNT),
+         (target, used) -> fail("Failed login must not activate"), available::contains,
+         target -> target == current, messages::add, failure -> fail(failure.toString()));
+      sessions.useAccount(failed, true, false);
+      workers.get(0).run();
+      clients.get(0).run();
+      assertTrue(sessions.isActive(current));
+      assertFalse(sessions.isActive(failed));
+      assertNull(sessions.getStatus(current));
+      assertTrue(sessions.getStatus(failed).isError());
+      assertFalse(sessions.getStatus(failed).isPending());
+   }
+
+   @Test public void activeBadgeFollowsMinecraftIdentityInsteadOfCachedTokenOrSelection() {
+      AbstractAccount account = account("Current");
+      assertTrue(SessionController.matchesSession(account,
+         new net.minecraft.util.Session("Current", account.getUuid().toString(), "new-launcher-token", "mojang")));
+      assertFalse(SessionController.matchesSession(account,
+         new net.minecraft.util.Session("Other", UUID.randomUUID().toString(), account.getAccessToken(), "mojang")));
+   }
+
+   @Test public void startupActivationDoesNotRecordANewManualUse() {
+      AbstractAccount account = account("LastUsed");
+      account.setLastUsed(1234L);
+      List<Boolean> markUsed = new ArrayList<>();
+      SessionController sessions = new SessionController(workers::add, clients::add,
+         (target, force) -> new LoginResult(target.createSessionObject(), LoginResponseType.SUCCESS),
+         (target, used) -> markUsed.add(used), available::contains, messages::add, failure -> fail());
+      sessions.useAccount(account, false, false);
+      workers.get(0).run();
+      clients.get(0).run();
+      assertEquals(java.util.Collections.singletonList(false), markUsed);
+      assertEquals(1234L, account.getLastUsed());
+   }
+
+   @Test public void activationFailureDoesNotLeaveSuccessOrPendingState() {
+      AbstractAccount account = account("A");
+      List<Throwable> failures = new ArrayList<>();
+      SessionController sessions = new SessionController(workers::add, clients::add,
+         (target, force) -> new LoginResult(target.createSessionObject(), LoginResponseType.SUCCESS),
+         (target, used) -> { throw new IllegalStateException("fixture activation failure"); },
+         available::contains, messages::add, failures::add);
+      sessions.useAccount(account, true, false);
+      workers.get(0).run();
+      clients.get(0).run();
+      assertFalse(sessions.isSwitching());
+      assertTrue(sessions.getStatus(account).isError());
+      assertEquals(1, failures.size());
+   }
 }

@@ -2,6 +2,18 @@
 
 All notable changes to Pug Alt Manager are documented here.
 
+## 1.2.3 - 2026-10-23
+
+### Fixed
+
+- Replace the centered session toast with a small ACTIVE badge on the account matching Minecraft's actual session
+- Show checking, refreshing, and authentication failures inside the affected account row; unrelated notices use a reserved footer below the list
+- Restore the most recently used account across repositories at startup instead of the last highlighted account
+- Leave the launcher session unchanged when no account has been used, or when the last-used account cannot be restored; never choose a never-used fallback
+- Keep browsing selection independent from the active session and from in-flight authentication
+- Record and persist last-used history only after a session is successfully applied; automatic startup restore does not change that history
+- Clear progress from superseded requests and handle activation failures without leaving misleading success state
+
 ## 1.2.2 - 2026-10-23
 
 ### Fixed

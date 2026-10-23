@@ -87,7 +87,13 @@ public final class ViewAccountScreen extends GuiScreen {
       this.drawCenteredString(
          this.fontRendererObj, "View account " + EnumChatFormatting.DARK_GRAY + this.account.getUsername(), this.width / 2, 17, 16777215
       );
-      this.statusRenderer.draw(this.width / 2, 37);
+      dev.pugrilla.altmanager.client.SessionController.Status sessionStatus = this.altManager.getSessionController().getStatus(this.account);
+      if (sessionStatus == null) {
+         this.statusRenderer.draw(this.width / 2, 37);
+      } else {
+         this.drawCenteredString(this.fontRendererObj, sessionStatus.getMessage(), this.width / 2, 37,
+            sessionStatus.isError() ? 0xFFFF9991 : sessionStatus.isPending() ? 0xFFFFD482 : 0xFF9DF3B5);
+      }
       this.drawString(
          this.fontRendererObj,
          "Username " + EnumChatFormatting.DARK_GRAY + "(" + this.usernameField.getText().length() + "/16)",
@@ -134,7 +140,6 @@ public final class ViewAccountScreen extends GuiScreen {
             );
       } else if (guibutton == this.refreshButton) {
          this.altManager.getSessionController().refreshAccount(this.account);
-         this.setStatus("Refreshing session... status is shown in the Alt Manager.");
       } else if (guibutton == this.moveButton) {
          this.mc.displayGuiScreen(new SelectRepositoryScreen(this, this.altManager, repository -> {
             if (repository != null) {

@@ -29,6 +29,18 @@ public interface StorageManager {
       return AccountRepository == null ? null : AccountRepository.getSelectedAccount();
    }
 
+   default AbstractAccount getLastUsedAccount() {
+      AbstractAccount lastUsed = null;
+      for (AccountRepository repository : this.getRepositories()) {
+         for (AbstractAccount account : repository.getAccountList()) {
+            if (account.getLastUsed() > 0L && (lastUsed == null || account.getLastUsed() > lastUsed.getLastUsed())) {
+               lastUsed = account;
+            }
+         }
+      }
+      return lastUsed;
+   }
+
    AccountType getSelectedAddAccountType();
 
    void setSelectedAddAccountType(AccountType AccountType);

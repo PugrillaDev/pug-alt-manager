@@ -37,9 +37,13 @@ public final class ClientEventListener {
          this.setMainMenuButtons((GuiMainMenu)post.gui, post.buttonList);
          if (!this.initialAccountApplied) {
             this.initialAccountApplied = true;
-            AbstractAccount AbstractAccount = this.altManager.getStorageManager().getSelectedAccount();
-            if (AbstractAccount != null) {
-               this.altManager.getSessionController().useAccount(AbstractAccount, false, false);
+            AbstractAccount lastUsed = this.altManager.getStorageManager().getLastUsedAccount();
+            if (lastUsed != null) {
+               if (lastUsed.getRepository().getEncryption().isDecrypted()) {
+                  this.altManager.getSessionController().useAccount(lastUsed, false, false);
+               } else {
+                  this.altManager.getMainScreen().setStatus("Unlock your last-used repository to sign in.");
+               }
             }
          }
       } else if (post.gui instanceof GuiDisconnected) {

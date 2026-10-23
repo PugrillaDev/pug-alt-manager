@@ -2,6 +2,7 @@ package dev.pugrilla.altmanager.account;
 
 import dev.pugrilla.altmanager.AltManager;
 import dev.pugrilla.altmanager.client.MinecraftReflection;
+import dev.pugrilla.altmanager.client.SessionController;
 import dev.pugrilla.altmanager.auth.SessionRefreshPolicy;
 import dev.pugrilla.altmanager.auth.MinecraftServicesApi;
 import dev.pugrilla.altmanager.gui.AccountDoubleClickAction;
@@ -145,17 +146,21 @@ public abstract class AbstractAccount implements IGuiListEntry {
       if (this.repository == null || !this.repository.getEncryption().isDecrypted()) {
          return;
       }
-      this.repository.setSelectedAccount(this);
+      MinecraftReflection.setMinecraftSession(minecraft, this.createSessionObject());
       if (flag) {
          this.setLastUsed(System.currentTimeMillis());
          this.repository.getAltManager().getStorageManager().setAutoSaveRequired();
+         try {
+            this.repository.getAltManager().getStorageManager().save();
+         } catch (IOException failure) {
+            this.repository.getAltManager().getLogger().warn("Could not persist the last-used account", failure);
+         }
       }
 
       this.repository
          .getAltManager()
          .getLogger()
          .info("Logged into account {} ({})", new Object[]{this.username, this.getAccountType().getName().toLowerCase()});
-      MinecraftReflection.setMinecraftSession(Minecraft.getMinecraft(), this.createSessionObject());
    }
 
    public final Session createSessionObject() {
@@ -241,6 +246,8 @@ public abstract class AbstractAccount implements IGuiListEntry {
          short1 += 30;
       }
 
+      SessionController sessions = this.repository.getAltManager().getSessionController();
+      boolean active = sessions.isActive(this);
       String s = (flag1 ? EnumChatFormatting.BOLD : "") + this.username;
       if (this.isInDoubleClick()) {
          short1 -= 20;
@@ -258,8 +265,17 @@ public abstract class AbstractAccount implements IGuiListEntry {
       }
 
       Gui.drawRect(i - b0, j - b0, i + k + b0, j + l + b0, new Color(b1, b1, b1 + 5, (int)(short1 / 1.5)).getRGB());
-      minecraft.fontRendererObj.drawStringWithShadow(s, i + 35, j + 2, ColorUtils.grayscale(short1));
       String s1 = this.accountType.getName();
+      int typeWidth = minecraft.fontRendererObj.getStringWidth(s1) / 2;
+      int badgeWidth = active ? minecraft.fontRendererObj.getStringWidth("ACTIVE") / 2 + 6 : 0;
+      int nameWidth = Math.max(0, k - 35 - typeWidth - badgeWidth - 12);
+      minecraft.fontRendererObj.drawStringWithShadow(minecraft.fontRendererObj.trimStringToWidth(s, nameWidth), i + 35, j + 2, ColorUtils.grayscale(short1));
+      if (active) {
+         int badgeX = i + k - typeWidth - badgeWidth - 6;
+         Gui.drawRect(i - 2, j - 1, i, j + l + 1, 0xFF61C982);
+         Gui.drawRect(badgeX, j + 1, badgeX + badgeWidth, j + 9, 0xDC183D27);
+         this.repository.getAltManager().getMainScreen().drawSmallStringWithShadow("ACTIVE", badgeX + 3, j + 3, 0xFF9DF3B5);
+      }
       this.repository
          .getAltManager()
          .getMainScreen()
@@ -278,8 +294,16 @@ public abstract class AbstractAccount implements IGuiListEntry {
             );
       }
 
-      String s4 = this.getLastUsed() == 0L ? "never used" : AltManagerUtils.formatRelativeTime(this.getLastUsed(), " ago");
-      this.repository.getAltManager().getMainScreen().drawSmallStringWithShadow(s4, i + 35, j + 12, ColorUtils.grayscaleWithAlpha(short1, short1 - 30));
+      SessionController.Status sessionStatus = sessions.getStatus(this);
+      String s4 = sessionStatus != null ? sessionStatus.getMessage()
+         : this.getLastUsed() == 0L ? "never used" : AltManagerUtils.formatRelativeTime(this.getLastUsed(), " ago");
+      if (flag && sessionStatus != null && sessionStatus.isError()) {
+         this.repository.getAltManager().getMainScreen().setRowStatusTooltip(s4);
+      }
+      int secondaryColor = sessionStatus == null ? ColorUtils.grayscaleWithAlpha(short1, short1 - 30)
+         : sessionStatus.isError() ? 0xFFFF9991 : sessionStatus.isPending() ? 0xFFFFD482 : 0xFF9DF3B5;
+      this.repository.getAltManager().getMainScreen().drawSmallStringWithShadow(
+         minecraft.fontRendererObj.trimStringToWidth(s4, Math.max(0, (k - 38) * 2)), i + 35, j + 12, secondaryColor);
       String s3 = this.getCreationTimeText();
       this.repository
          .getAltManager()

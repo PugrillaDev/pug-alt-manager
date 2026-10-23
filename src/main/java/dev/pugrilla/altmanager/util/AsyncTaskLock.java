@@ -15,22 +15,30 @@ public final class AsyncTaskLock {
    }
 
    public void execute(Runnable runnable) {
-      this.verifyValue(this.activeTaskCount.incrementAndGet());
-      this.altManager.getThreadPool().execute(() -> {
-         try {
-            runnable.run();
-         } catch (Throwable throwable) {
-            this.altManager.getLogger().error("Exception inside lock service", throwable);
-
+      this.activeTaskCount.incrementAndGet();
+      try {
+         this.altManager.getThreadPool().execute(() -> {
             try {
-               this.errorHandler.accept(throwable);
-            } catch (Throwable handlerFailure) {
-               this.altManager.getLogger().error("Exception inside lock service error handler", handlerFailure);
+               runnable.run();
+            } catch (Throwable failure) {
+               this.handleFailure(failure);
+            } finally {
+               this.activeTaskCount.decrementAndGet();
             }
-         }
+         });
+      } catch (RuntimeException failure) {
+         this.activeTaskCount.decrementAndGet();
+         this.handleFailure(failure);
+      }
+   }
 
-         this.verifyValue(this.activeTaskCount.decrementAndGet());
-      });
+   private void handleFailure(Throwable failure) {
+      this.altManager.getLogger().error("Exception inside lock service", failure);
+      try {
+         this.errorHandler.accept(failure);
+      } catch (Throwable handlerFailure) {
+         this.altManager.getLogger().error("Exception inside lock service error handler", handlerFailure);
+      }
    }
 
    private void verifyValue(int i) {

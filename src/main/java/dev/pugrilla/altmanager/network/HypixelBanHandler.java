@@ -23,11 +23,7 @@ public final class HypixelBanHandler {
             String s = ichatcomponent1.getUnformattedText();
             long i;
             if (!s.contains("blocked") && !s.contains("banned")) {
-               if (s.equals("Failed to authenticate your connection!")) {
-                  return;
-               }
-
-               i = -1L;
+               return;
             } else if (s.startsWith("You are permanently banned from this server!")) {
                i = -2L;
                flag = true;

@@ -22,7 +22,6 @@ import dev.pugrilla.jnafilechooser.api.WindowsFileChooser;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.EnumChatFormatting;
 public final class SkinCustomizationScreen extends GuiScreen {
    private final GuiScreen previousScreen;
@@ -134,8 +133,10 @@ public final class SkinCustomizationScreen extends GuiScreen {
                File[] files = chooser.getSelectedFiles();
                if (files.length > 0) {
                   String path = files[0].getAbsolutePath();
-                  this.inputField.setText(path);
-                  this.altManager.getStorageManager().setLastSkinFilePath(path);
+                  this.mc.addScheduledTask(() -> {
+                     this.inputField.setText(path);
+                     this.altManager.getStorageManager().setLastSkinFilePath(path);
+                  });
                }
             });
          } else if (guibutton == this.variantButton) {
@@ -174,7 +175,7 @@ public final class SkinCustomizationScreen extends GuiScreen {
          return;
       }
 
-      GameProfile gameprofile = MinecraftServer.getServer().getMinecraftSessionService().fillProfileProperties(new GameProfile(uuid, s), true);
+      GameProfile gameprofile = this.mc.getSessionService().fillProfileProperties(new GameProfile(uuid, s), true);
       Map map = this.mc.getSessionService().getTextures(gameprofile, false);
       MinecraftProfileTexture minecraftprofiletexture = (MinecraftProfileTexture)map.get(Type.SKIN);
       Objects.requireNonNull(minecraftprofiletexture);

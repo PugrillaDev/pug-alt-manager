@@ -57,16 +57,17 @@ public final class BanCheckNetworkManager extends NetworkManager {
             return;
          }
 
-         if (!(packet instanceof S01PacketEncryptionRequest)) {
+         if (packet instanceof net.minecraft.network.login.server.S02PacketLoginSuccess) {
             this.altManager.getStorageManager().setBanExpiry(this.session.getProfile().getId(), -1L);
-            System.out.println("LOLzxc$!");
             this.closeChannel(new ChatComponentText("Finished"));
             return;
          }
 
-         System.out.println("LOL#$!");
-         S01PacketEncryptionRequest s01packetencryptionrequest = (S01PacketEncryptionRequest)packet;
-         this.handleEncryptionRequest(s01packetencryptionrequest);
+         if (packet instanceof net.minecraft.network.login.server.S03PacketEnableCompression) {
+            this.setCompressionTreshold(((net.minecraft.network.login.server.S03PacketEnableCompression)packet).getCompressionTreshold());
+         } else if (packet instanceof S01PacketEncryptionRequest) {
+            this.handleEncryptionRequest((S01PacketEncryptionRequest)packet);
+         }
       }
    }
 
@@ -78,7 +79,7 @@ public final class BanCheckNetworkManager extends NetworkManager {
       Minecraft minecraft = Minecraft.getMinecraft();
 
       try {
-         minecraft.getSessionService().joinServer(minecraft.getSession().getProfile(), minecraft.getSession().getToken(), s1);
+         minecraft.getSessionService().joinServer(this.session.getProfile(), this.session.getToken(), s1);
       } catch (AuthenticationUnavailableException authenticationunavailableexception) {
          this.closeChannel(
             new ChatComponentTranslation(
@@ -128,7 +129,7 @@ public final class BanCheckNetworkManager extends NetworkManager {
          lazyloadbase = CLIENT_NIO_EVENTLOOP;
       }
 
-      ((Bootstrap)((Bootstrap)((Bootstrap)new Bootstrap().group((EventLoopGroup)lazyloadbase.getValue())).handler(new BanCheckChannelInitializer(BanCheckNetworkManager))).channel(oclass))
+      ((Bootstrap)((Bootstrap)((Bootstrap)new Bootstrap().option(io.netty.channel.ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000).group((EventLoopGroup)lazyloadbase.getValue())).handler(new BanCheckChannelInitializer(BanCheckNetworkManager))).channel(oclass))
          .connect(inetaddress, i)
          .syncUninterruptibly();
       return BanCheckNetworkManager;

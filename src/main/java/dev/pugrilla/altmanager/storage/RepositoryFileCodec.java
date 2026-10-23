@@ -25,17 +25,25 @@ public final class RepositoryFileCodec {
       int j = datainputstream.readInt();
       if (j >= 0 && j <= REPOSITORY_FILE_VERSION) {
          AccountRepository AccountRepository = FileStorageManager.readRepository(altmanager, datainputstream, j);
-         altmanager.getStorageManager().createRepository(AccountRepository);
          int k = datainputstream.readInt();
+         if (k < 0 || k > datainputstream.available() / 24) {
+            throw new IOException("Invalid ban status count");
+         }
+         HashMap<UUID, Long> importedBans = new HashMap<>();
 
          for (int l = 0; l < k; l++) {
             UUID uuid = new UUID(datainputstream.readLong(), datainputstream.readLong());
             long i1 = datainputstream.readLong();
-            long j1 = altmanager.getStorageManager().getBanExpiry(uuid);
-            if (j1 == 0L && i1 != 0L) {
-               altmanager.getStorageManager().setBanExpiry(uuid, i1);
-            }
+            importedBans.put(uuid, i1);
          }
+         net.minecraft.client.Minecraft.getMinecraft().addScheduledTask(() -> {
+            altmanager.getStorageManager().createRepository(AccountRepository);
+            importedBans.forEach((uuid, expiry) -> {
+               if (altmanager.getStorageManager().getBanExpiry(uuid) == 0L && expiry != 0L) {
+                  altmanager.getStorageManager().setBanExpiry(uuid, expiry);
+               }
+            });
+         });
       } else {
          throw new IOException("Incompatible repository file version: " + j + ", current is " + REPOSITORY_FILE_VERSION);
       }

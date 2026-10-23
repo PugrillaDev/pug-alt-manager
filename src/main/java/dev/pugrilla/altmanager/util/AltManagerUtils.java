@@ -19,7 +19,7 @@ import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiTextField;
 public final class AltManagerUtils {
-   public static final Pattern MINECRAFT_USERNAME_PATTERN = Pattern.compile("^(?!_)(?!.*__)(?!.*_$)[a-zA-Z0-9_]{3,16}(?<!_)$");
+   public static final Pattern MINECRAFT_USERNAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_]{3,16}$");
    public static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd");
    public static final SimpleDateFormat DATE_TIME_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
    public static boolean isValidRepositoryName(String s) {
@@ -196,7 +196,7 @@ public final class AltManagerUtils {
 
       for (String s2 : astring) {
          if (s1.contains(String.valueOf(s2.charAt(s2.length() - 1)))) {
-            String[] astring1 = s1.split(s2);
+            String[] astring1 = s1.split(s2, 2);
             if (astring1.length >= 2) {
                return new String[]{astring1[0], astring1[1]};
             }

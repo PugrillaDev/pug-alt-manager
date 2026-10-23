@@ -19,6 +19,7 @@ public final class RandomSkinProvider {
          HttpsURLConnection httpsurlconnection = (HttpsURLConnection)URI.create("https://api.novaskin.me/v2/random").toURL().openConnection();
          httpsurlconnection.setRequestProperty("User-Agent", s);
          httpsurlconnection.setConnectTimeout(5000);
+         httpsurlconnection.setReadTimeout(5000);
          String s1 = IOUtils.toString(httpsurlconnection.getInputStream(), StandardCharsets.UTF_8);
          JsonObject jsonobject = new JsonParser().parse(s1).getAsJsonObject();
          JsonArray jsonarray = jsonobject.getAsJsonArray("posts");
@@ -43,11 +44,12 @@ public final class RandomSkinProvider {
          httpsurlconnection = (HttpsURLConnection)URI.create("https://api.novaskin.me/v2/post/" + s3).toURL().openConnection();
          httpsurlconnection.setRequestProperty("User-Agent", s);
          httpsurlconnection.setConnectTimeout(5000);
+         httpsurlconnection.setReadTimeout(5000);
          s1 = IOUtils.toString(httpsurlconnection.getInputStream(), StandardCharsets.UTF_8);
          jsonobject = new JsonParser().parse(s1).getAsJsonObject();
          String s4 = jsonobject.get("texture").getAsString();
          return new SkinData("https://t.novaskin.me/" + s4, "classic");
-      } catch (IOException ioexception) {
+      } catch (IOException | RuntimeException ioexception) {
          return null;
       }
    }

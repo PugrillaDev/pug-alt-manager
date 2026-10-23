@@ -9,13 +9,13 @@ public final class StatusMessageRenderer {
    private long shownAt;
    private int durationMs;
 
-   public void setStatus(String s, int i) {
+   public synchronized void setStatus(String s, int i) {
       this.message = s;
       this.shownAt = System.currentTimeMillis();
       this.durationMs = i;
    }
 
-   public void draw(int i, int j) {
+   public synchronized void draw(int i, int j) {
       if (this.message != null) {
          byte b0 = 100;
          long k = System.currentTimeMillis();

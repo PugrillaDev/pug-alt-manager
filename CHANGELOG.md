@@ -2,6 +2,36 @@
 
 All notable changes to Pug Alt Manager are documented here.
 
+## 1.2 - 2026-10-23
+
+### Added
+
+- Shared player-head cache by UUID, persistent texture metadata, Minecraft's cached skin images, background refresh, and failure cooldowns
+- Session validation before account activation, expiry-aware refresh, and automatic recovery after invalid-session disconnects
+- Explicit progress and failure messages for login and refresh operations
+- Backup recovery for damaged account databases while preserving the damaged file
+
+### Fixed
+
+- Apply a session once after authentication finishes; ignore obsolete switch results and duplicate clicks
+- Serialize refresh requests for each account and keep session changes on the Minecraft client thread
+- Refresh Microsoft browser accounts without depending on the callback server's previous port; persist rotated refresh tokens
+- Save the auto-refresh preference and other changed settings across restarts, including compatibility with older databases
+- Open account lists at the top; use the displayed sort/filter order for scrolling and range selection
+- Clear the stored search when Escape clears the search field, and avoid sorting the full list every tick
+- Clear stale account selection after deletion and prevent operations on locked repositories
+- Cancel account moves on Escape, prevent moves into locked repositories, and register imports only after parsing succeeds
+- Use the checked account's session for ban checks, handle compression correctly, close timed-out checks, and display permanent bans correctly
+- Avoid recording unrelated server disconnects as successful Hypixel ban checks
+- Fix skin copying when no integrated server exists, bound HTTP requests, and handle error statuses before parsing response bodies
+- Validate browser OAuth state, restrict the callback listener to loopback, and respond to failed callbacks
+- Mask account secrets in input fields and remove access tokens and recursive repository output from diagnostics
+- Accept valid usernames containing leading, trailing, or repeated underscores; preserve separators in pasted passwords
+- Handle malformed cookie rows, HttpOnly cookies, Windows newlines, and lookalike domains
+- Restore credential-login cookie state on every exit, release task locks on scheduling failures, and return UI changes to the client thread
+- Validate stored collection and payload lengths before allocation
+- Derive installer and verification artifact names from the project version; back up old Pug Alt Manager JARs outside the active mods folder
+
 ## 1.1 - 2026-09-10
 
 ### Security

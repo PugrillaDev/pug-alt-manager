@@ -68,23 +68,26 @@ public final class CredentialsAccount extends AbstractAccount {
       dataoutputstream.writeUTF(this.getEmail());
       dataoutputstream.writeUTF(this.getPassword());
    }
-   private static LoginResult loginWithCredentials(String s, String s1, boolean flag) {
+   private static synchronized LoginResult loginWithCredentials(String s, String s1, boolean flag) {
       CookieHandler cookiehandler = CookieHandler.getDefault();
       CookieManager cookiemanager = new CookieManager(null, CookiePolicy.ACCEPT_ALL);
       CookieHandler.setDefault(cookiemanager);
+      HttpsURLConnection httpsurlconnection = null;
 
       try {
          String s2 = "Mozilla/5.0 (XboxReplay; XboxLiveAuth/3.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36";
-         HttpsURLConnection httpsurlconnection = (HttpsURLConnection)URI.create(
+         httpsurlconnection = (HttpsURLConnection)URI.create(
                "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?scope=service%3A%3Auser.auth.xboxlive.com%3A%3AMBI_SSL&display=touch&response_type=token&redirect_uri=https%3A%2F%2Flogin.live.com%2Foauth20_desktop.srf&locale=en&client_id=000000004C12AE6F"
             )
             .toURL()
             .openConnection();
+         httpsurlconnection.setConnectTimeout(5000);
+         httpsurlconnection.setReadTimeout(5000);
          httpsurlconnection.setRequestProperty("User-Agent", s2);
          httpsurlconnection.setConnectTimeout(5000);
          httpsurlconnection.setReadTimeout(5000);
          httpsurlconnection.connect();
-         String s3 = IOUtils.toString(httpsurlconnection.getInputStream(), StandardCharsets.UTF_8);
+         String s3 = readResponse(httpsurlconnection);
          String s4 = AltManagerUtils.extractFirstRegexGroup("sFTTag:'.*value=\"([^\"]*)\"", s3);
          String s5 = AltManagerUtils.extractFirstRegexGroup("urlPost: ?'(.+?(?='))", s3);
          if (s4 != null && s5 != null) {
@@ -92,6 +95,8 @@ public final class CredentialsAccount extends AbstractAccount {
             String s7 = URLEncoder.encode(s1, "UTF-8");
             String s8 = "loginfmt=" + s6 + "&passwd=" + s7 + "&PPFT=" + URLEncoder.encode(s4, "UTF-8") + "&login=" + s6;
             httpsurlconnection = (HttpsURLConnection)URI.create(s5).toURL().openConnection();
+         httpsurlconnection.setConnectTimeout(5000);
+         httpsurlconnection.setReadTimeout(5000);
             httpsurlconnection.setRequestMethod("POST");
             httpsurlconnection.setRequestProperty("User-Agent", s2);
             httpsurlconnection.addRequestProperty("Content-Type", "application/x-www-form-urlencoded");
@@ -107,7 +112,7 @@ public final class CredentialsAccount extends AbstractAccount {
                return new LoginResult(LoginResponseType.INVALID_ACCOUNT);
             }
 
-            s3 = IOUtils.toString(httpsurlconnection.getInputStream(), StandardCharsets.UTF_8);
+            s3 = readResponse(httpsurlconnection);
             String s10 = s3.toLowerCase();
             if (s10.contains("abuse")) {
                return new LoginResult(LoginResponseType.ABUSE_LOCKED);
@@ -129,6 +134,8 @@ public final class CredentialsAccount extends AbstractAccount {
                   + s20
                   + "\"},\"RelyingParty\":\"http://auth.xboxlive.com\",\"TokenType\":\"JWT\"}";
                httpsurlconnection = (HttpsURLConnection)URI.create("https://user.auth.xboxlive.com/user/authenticate").toURL().openConnection();
+         httpsurlconnection.setConnectTimeout(5000);
+         httpsurlconnection.setReadTimeout(5000);
                httpsurlconnection.setRequestMethod("POST");
                httpsurlconnection.setRequestProperty("User-Agent", s2);
                httpsurlconnection.addRequestProperty("Content-Type", "application/json");
@@ -139,13 +146,15 @@ public final class CredentialsAccount extends AbstractAccount {
                httpsurlconnection.setReadTimeout(5000);
                httpsurlconnection.connect();
                Gson gson = new Gson();
-               String s14 = ((JsonObject)gson.fromJson(IOUtils.toString(httpsurlconnection.getInputStream(), StandardCharsets.UTF_8), JsonObject.class))
+               String s14 = ((JsonObject)gson.fromJson(readResponse(httpsurlconnection), JsonObject.class))
                   .get("Token")
                   .getAsString();
                s8 = "{\"Properties\":{\"SandboxId\":\"RETAIL\",\"UserTokens\":[\""
                   + s14
                   + "\"]},\"RelyingParty\":\"rp://api.minecraftservices.com/\",\"TokenType\":\"JWT\"}";
                httpsurlconnection = (HttpsURLConnection)URI.create("https://xsts.auth.xboxlive.com/xsts/authorize").toURL().openConnection();
+         httpsurlconnection.setConnectTimeout(5000);
+         httpsurlconnection.setReadTimeout(5000);
                httpsurlconnection.setRequestMethod("POST");
                httpsurlconnection.setRequestProperty("User-Agent", s2);
                httpsurlconnection.addRequestProperty("Content-Type", "application/json");
@@ -155,7 +164,7 @@ public final class CredentialsAccount extends AbstractAccount {
                httpsurlconnection.setConnectTimeout(5000);
                httpsurlconnection.setReadTimeout(5000);
                httpsurlconnection.connect();
-               s3 = IOUtils.toString(httpsurlconnection.getInputStream(), StandardCharsets.UTF_8);
+               s3 = readResponse(httpsurlconnection);
                s14 = s3.split("\"Token\":\"")[1].split("\"")[0];
                String s15 = s3.split("\"uhs\":\"")[1].split("\"")[0];
                String s16 = "XBL3.0 x=" + s15 + ";" + s14;
@@ -173,11 +182,13 @@ public final class CredentialsAccount extends AbstractAccount {
 
                try {
                   httpsurlconnection = (HttpsURLConnection)URI.create("https://api.minecraftservices.com/minecraft/profile").toURL().openConnection();
+         httpsurlconnection.setConnectTimeout(5000);
+         httpsurlconnection.setReadTimeout(5000);
                   httpsurlconnection.setRequestProperty("Authorization", "Bearer " + s18);
                   httpsurlconnection.setConnectTimeout(5000);
                   httpsurlconnection.setReadTimeout(5000);
                   httpsurlconnection.connect();
-                  MinecraftProfileDto MinecraftProfileDto = (MinecraftProfileDto)gson.fromJson(IOUtils.toString(httpsurlconnection.getInputStream(), StandardCharsets.UTF_8), MinecraftProfileDto.class);
+                  MinecraftProfileDto MinecraftProfileDto = (MinecraftProfileDto)gson.fromJson(readResponse(httpsurlconnection), MinecraftProfileDto.class);
                   httpsurlconnection.disconnect();
                   return new LoginResult(new Session(MinecraftProfileDto.name, MinecraftProfileDto.id, s18, "mojang"), LoginResponseType.SUCCESS);
                } catch (FileNotFoundException filenotfoundexception) {
@@ -199,6 +210,8 @@ public final class CredentialsAccount extends AbstractAccount {
                httpsurlconnection = (HttpsURLConnection)URI.create(s3.split("><form name=\"fmHF\" id=\"fmHF\" action=\"")[1].split("\"")[0])
                   .toURL()
                   .openConnection();
+         httpsurlconnection.setConnectTimeout(5000);
+         httpsurlconnection.setReadTimeout(5000);
                httpsurlconnection.setRequestMethod("POST");
                httpsurlconnection.setRequestProperty("User-Agent", s2);
                httpsurlconnection.addRequestProperty("Content-Type", "application/x-www-form-urlencoded");
@@ -208,13 +221,15 @@ public final class CredentialsAccount extends AbstractAccount {
                httpsurlconnection.setConnectTimeout(5000);
                httpsurlconnection.setReadTimeout(5000);
                httpsurlconnection.connect();
-               s3 = IOUtils.toString(httpsurlconnection.getInputStream(), StandardCharsets.UTF_8);
+               s3 = readResponse(httpsurlconnection);
                s8 = "iProofOptions=Email&DisplayPhoneCountryISO=US&DisplayPhoneNumber=&EmailAddress=&canary="
                   + s3.split("=\"canary\" name=\"canary\" value=\"")[1].split("\"")[0]
                   + "&action=Skip&PhoneNumber=&PhoneCountryISO=";
                httpsurlconnection = (HttpsURLConnection)URI.create(s3.split("id=\"frmAddProof\" method=\"post\" action=\"")[1].split("\"")[0])
                   .toURL()
                   .openConnection();
+         httpsurlconnection.setConnectTimeout(5000);
+         httpsurlconnection.setReadTimeout(5000);
                httpsurlconnection.setRequestMethod("POST");
                httpsurlconnection.setRequestProperty("User-Agent", s2);
                httpsurlconnection.addRequestProperty("Content-Type", "application/x-www-form-urlencoded");
@@ -230,9 +245,23 @@ public final class CredentialsAccount extends AbstractAccount {
             CookieHandler.setDefault(cookiehandler);
             return new LoginResult(LoginResponseType.INVALID_ACCOUNT);
          }
-      } catch (IOException ioexception) {
-         CookieHandler.setDefault(cookiehandler);
+      } catch (IOException failure) {
+         return new LoginResult(LoginResponseType.NETWORK_ERROR);
+      } catch (RuntimeException failure) {
          return new LoginResult(LoginResponseType.INVALID_ACCOUNT);
+      } finally {
+         CookieHandler.setDefault(cookiehandler);
+         if (httpsurlconnection != null) {
+            httpsurlconnection.disconnect();
+         }
+      }
+   }
+
+   private static String readResponse(HttpsURLConnection connection) throws IOException {
+      try (java.io.InputStream input = connection.getInputStream()) {
+         return IOUtils.toString(input, StandardCharsets.UTF_8);
+      } finally {
+         connection.disconnect();
       }
    }
 }

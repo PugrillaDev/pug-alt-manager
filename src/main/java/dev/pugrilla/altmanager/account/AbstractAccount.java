@@ -2,6 +2,8 @@ package dev.pugrilla.altmanager.account;
 
 import dev.pugrilla.altmanager.AltManager;
 import dev.pugrilla.altmanager.client.MinecraftReflection;
+import dev.pugrilla.altmanager.auth.SessionRefreshPolicy;
+import dev.pugrilla.altmanager.auth.MinecraftServicesApi;
 import dev.pugrilla.altmanager.gui.AccountDoubleClickAction;
 import dev.pugrilla.altmanager.gui.AltManagerScreen;
 import dev.pugrilla.altmanager.gui.PlayerHeadRenderer;
@@ -35,18 +37,19 @@ public abstract class AbstractAccount implements IGuiListEntry {
    protected static final String UNINITIALIZED_USERNAME = "UninitAcc";
    protected static final UUID NIL_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000");
    private final AccountType accountType;
-   private String username;
-   private UUID uuid;
-   private String accessToken;
+   private final Object loginLock = new Object();
+   private volatile String username;
+   private volatile UUID uuid;
+   private volatile String accessToken;
    private long lastUsed;
    private long creationTime;
-   private long lastRefresh;
-   private AccountRepository repository;
+   private volatile long lastRefresh;
+   private volatile AccountRepository repository;
    private PlayerHeadRenderer playerHead;
    private long lastRenderTime;
    private int consecutiveRenders;
    private long lastClickTime;
-   private boolean doubleClickActionRunning;
+   private volatile boolean doubleClickActionRunning;
    private byte[] pendingEncryptedData;
    private boolean pendingDataContainsAccessToken;
 
@@ -74,47 +77,74 @@ public abstract class AbstractAccount implements IGuiListEntry {
    }
 
    public final boolean shouldRefreshSessionAutomatically() {
-      if (!this.repository.getAltManager().getStorageManager().isAutoRefreshSession() || this.getAccountType() == AccountType.SESSION) {
-         return false;
-      }
-
-      if (this.lastRefresh == 0L) {
-         return true;
-      }
-
-      long i = System.currentTimeMillis() - this.lastRefresh;
-      return i < 0L || i > 86400000L;
+      return this.repository != null && this.repository.getEncryption().isDecrypted()
+         && this.repository.getAltManager().getStorageManager().isAutoRefreshSession()
+         && this.getAccountType() != AccountType.SESSION
+         && SessionRefreshPolicy.needsRefresh(this.accessToken, this.lastRefresh, System.currentTimeMillis());
    }
 
    public final LoginResult login() {
-      LoginResult LoginResult = this.loginImpl();
-      Session session = LoginResult.getSession();
-      if (session != null && LoginResult.getResponseType() == LoginResponseType.SUCCESS) {
-         this.username = session.getUsername();
-         this.uuid = session.getProfile().getId();
-         this.accessToken = session.getToken();
-         this.setLastRefresh(System.currentTimeMillis());
-         if (this.repository != null && this.repository.getAltManager().getStorageManager().getSelectedAccount() == this) {
-            this.setMinecraftSession(true);
+      synchronized (this.loginLock) {
+         LoginResult result = this.loginImpl();
+         Session session = result.getSession();
+         synchronized (this) {
+            if (session != null && result.getResponseType() == LoginResponseType.SUCCESS) {
+               this.username = session.getUsername();
+               this.setUuid(session.getProfile().getId());
+               this.accessToken = session.getToken();
+               this.setLastRefresh(System.currentTimeMillis());
+            } else if (session != null && result.getResponseType() == LoginResponseType.NO_MINECRAFT_PROFILE) {
+               this.accessToken = session.getToken();
+            }
          }
+         AccountRepository owner = this.repository;
+         if (owner != null && owner.getAltManager() != null) {
+            Minecraft.getMinecraft().addScheduledTask(() -> {
+               owner.invalidateViewingAccountList();
+               owner.getAltManager().getStorageManager().setAutoSaveRequired();
+            });
+         }
+         return result;
       }
-
-      return LoginResult;
    }
 
    public final void setMinecraftSessionAndRefreshIfNeeded() {
-      if (this.repository != null && this.shouldRefreshSessionAutomatically()) {
-         this.repository
-            .getAltManager()
-            .getLogger()
-            .info("Automatically refreshing account '{}' because session token is too old", new Object[]{this.getUsername()});
-         this.repository.getAltManager().getThreadPool().execute(this::login);
+      if (this.repository != null) {
+         this.repository.getAltManager().getSessionController().useAccount(this, true, false);
       }
+   }
 
-      this.setMinecraftSession(true);
+   public final LoginResult prepareSession(boolean autoRefresh, boolean forceRefresh) {
+      synchronized (this.loginLock) {
+         boolean refreshable = this.getAccountType() != AccountType.SESSION;
+         if (autoRefresh && refreshable && (forceRefresh
+            || SessionRefreshPolicy.needsRefresh(this.accessToken, this.lastRefresh, System.currentTimeMillis()))) {
+            return this.login();
+         }
+         LoginResult validation = this.validateSession();
+         if (autoRefresh && refreshable && validation.getResponseType() == LoginResponseType.INVALID_ACCOUNT) {
+            return this.login();
+         }
+         return validation;
+      }
+   }
+
+   protected LoginResult validateSession() {
+      if (this.accessToken == null || this.accessToken.isEmpty()) {
+         return new LoginResult(LoginResponseType.INVALID_ACCOUNT);
+      }
+      return MinecraftServicesApi.validateSession(this.createSessionObject());
    }
 
    public final void setMinecraftSession(boolean flag) {
+      Minecraft minecraft = Minecraft.getMinecraft();
+      if (!minecraft.isCallingFromMinecraftThread()) {
+         minecraft.addScheduledTask(() -> this.setMinecraftSession(flag));
+         return;
+      }
+      if (this.repository == null || !this.repository.getEncryption().isDecrypted()) {
+         return;
+      }
       this.repository.setSelectedAccount(this);
       if (flag) {
          this.setLastUsed(System.currentTimeMillis());
@@ -156,6 +186,9 @@ public abstract class AbstractAccount implements IGuiListEntry {
 
    public final void setUsername(String s) {
       this.username = s;
+      if (this.repository != null) {
+         this.repository.invalidateViewingAccountList();
+      }
    }
 
    public final UUID getUuid() {
@@ -163,11 +196,17 @@ public abstract class AbstractAccount implements IGuiListEntry {
    }
 
    public final void setUuid(UUID uuid) {
+      if (!uuid.equals(this.uuid)) {
+         this.playerHead = null;
+      }
       this.uuid = uuid;
    }
 
    public final void setLastUsed(long i) {
       this.lastUsed = i;
+      if (this.repository != null) {
+         this.repository.invalidateViewingAccountList();
+      }
    }
 
    public final long getLastUsed() {
@@ -179,7 +218,8 @@ public abstract class AbstractAccount implements IGuiListEntry {
    }
 
    public final boolean isInDoubleClick() {
-      return this.doubleClickActionRunning;
+      return this.doubleClickActionRunning || (this.repository != null
+         && this.repository.getAltManager().getSessionController().isSwitching(this));
    }
 
    public void setSelected(int i, int j, int k) {
@@ -227,7 +267,7 @@ public abstract class AbstractAccount implements IGuiListEntry {
       long i1 = this.getBanExpiry();
       long j1 = System.currentTimeMillis();
       if (i1 != 0L) {
-         String s2 = i1 != -1L && j1 < i1
+         String s2 = i1 == -2L || (i1 > 0L && j1 < i1)
             ? EnumChatFormatting.RED + (i1 == -2L ? "permanent" : AltManagerUtils.formatDuration(i1 - j1, false))
             : EnumChatFormatting.GREEN + "unbanned";
          this.repository
@@ -261,7 +301,7 @@ public abstract class AbstractAccount implements IGuiListEntry {
 
       if (this.playerHead != null) {
          this.playerHead.ensureSkinDownloaded();
-         this.playerHead.setAlpha(255.0F / short1);
+         this.playerHead.setAlpha(short1 / 255.0F);
          this.playerHead.drawHead(i, j);
       }
    }
@@ -287,8 +327,8 @@ public abstract class AbstractAccount implements IGuiListEntry {
          }
 
          if (AltManagerScreen.isShiftKeyDown() && !AltManagerScreen.getMultiSelectionAccounts().isEmpty()) {
-            int i = this.repository.getAccountList().indexOf(this);
-            int j = this.repository.getAccountList().indexOf(AltManagerScreen.getMultiSelectionAccounts().get(AltManagerScreen.getMultiSelectionAccounts().size() - 1));
+            int i = this.repository.getViewingAccountList().indexOf(this);
+            int j = this.repository.getViewingAccountList().indexOf(AltManagerScreen.getMultiSelectionAccounts().get(AltManagerScreen.getMultiSelectionAccounts().size() - 1));
             if (i != -1 && j != -1) {
                if (i > j) {
                   int k = j;
@@ -299,7 +339,7 @@ public abstract class AbstractAccount implements IGuiListEntry {
                AltManagerScreen.getMultiSelectionAccounts().clear();
 
                for (int l = i; l < j; l++) {
-                  AltManagerScreen.addToMultiSelection((AbstractAccount)this.repository.getAccountList().get(l));
+                  AltManagerScreen.addToMultiSelection(this.repository.getViewingAccountList().get(l));
                }
             }
          }
@@ -311,19 +351,26 @@ public abstract class AbstractAccount implements IGuiListEntry {
       } else {
          this.repository.getAltManager().getMainScreen().getMultiSelectionAccounts().clear();
          this.repository.setSelectedAccount(this);
-         if (!this.doubleClickActionRunning && System.currentTimeMillis() - this.lastClickTime < 350L) {
+         if (!this.isInDoubleClick() && System.currentTimeMillis() - this.lastClickTime < 350L) {
             AccountDoubleClickAction AccountDoubleClickAction = this.repository.getAltManager().getStorageManager().getAccountDoubleClickAction();
             if (AccountDoubleClickAction.isAsync()) {
                this.doubleClickActionRunning = true;
-               this.repository.getAltManager().getThreadPool().execute(() -> {
-                  try {
-                     AccountDoubleClickAction.getAction().accept(this);
-                  } catch (Throwable throwable) {
-                     this.repository.getAltManager().getLogger().error("Failed to run async double click action", throwable);
-                  }
-
+               AccountRepository owner = this.repository;
+               try {
+                  owner.getAltManager().getThreadPool().execute(() -> {
+                     try {
+                        AccountDoubleClickAction.getAction().accept(this);
+                     } catch (Throwable failure) {
+                        owner.getAltManager().getLogger().warn("Account action failed ({})", failure.getClass().getSimpleName());
+                        Minecraft.getMinecraft().addScheduledTask(() -> owner.getAltManager().getMainScreen().setStatus("Account action failed. Please try again."));
+                     } finally {
+                        this.doubleClickActionRunning = false;
+                     }
+                  });
+               } catch (RuntimeException failure) {
                   this.doubleClickActionRunning = false;
-               });
+                  owner.getAltManager().getMainScreen().setStatus("Could not start account action. Please try again.");
+               }
             } else {
                AccountDoubleClickAction.getAction().accept(this);
             }
@@ -347,11 +394,8 @@ public abstract class AbstractAccount implements IGuiListEntry {
          + '\''
          + ", uuid="
          + this.uuid
-         + ", accessToken='"
-         + this.accessToken
-         + '\''
          + ", repository="
-         + this.repository
+         + (this.repository == null ? null : this.repository.getName())
          + '}';
    }
 
@@ -398,7 +442,7 @@ public abstract class AbstractAccount implements IGuiListEntry {
       return this.serializeDataToBytes(false);
    }
 
-   public final byte[] serializeDataToBytes(boolean includeAccessToken) throws IOException {
+   public final synchronized byte[] serializeDataToBytes(boolean includeAccessToken) throws IOException {
       if (!this.repository.getEncryption().isDecrypted()) {
          byte[] abyte1 = this.pendingEncryptedData;
          if (abyte1 == null) {
@@ -436,8 +480,16 @@ public abstract class AbstractAccount implements IGuiListEntry {
    }
 
    public void startBanCheck() {
-      this.setMinecraftSession(false);
-      AltManager altmanager = this.repository.getAltManager();
+      AccountRepository owner = this.repository;
+      if (owner == null || !owner.getEncryption().isDecrypted()) {
+         return;
+      }
+      AltManager altmanager = owner.getAltManager();
+      LoginResult prepared = this.prepareSession(altmanager.getStorageManager().isAutoRefreshSession(), false);
+      if (!prepared.isSuccessfulLogin()) {
+         Minecraft.getMinecraft().addScheduledTask(() -> altmanager.getMainScreen().setStatus(prepared.getResponseType().getDescription()));
+         return;
+      }
       String s = "mc.hypixel.net.";
 
       InetAddress inetaddress;
@@ -451,7 +503,6 @@ public abstract class AbstractAccount implements IGuiListEntry {
       CountDownLatch countdownlatch = new CountDownLatch(1);
       BanCheckNetworkManager networkManager = BanCheckNetworkManager.connect(altmanager, this.createSessionObject(), inetaddress, 25565, reason -> {
          countdownlatch.countDown();
-         this.setLastUsed(System.currentTimeMillis());
       });
       networkManager.setNetHandler(new NetHandlerLoginClient(networkManager, Minecraft.getMinecraft(), null));
       networkManager.sendPacket(new C00Handshake(47, "mc.hypixel.net.", 25565, EnumConnectionState.LOGIN));
@@ -460,7 +511,9 @@ public abstract class AbstractAccount implements IGuiListEntry {
       try {
          countdownlatch.await(5L, TimeUnit.SECONDS);
       } catch (InterruptedException interruptedexception) {
-         throw new RuntimeException(interruptedexception);
+         Thread.currentThread().interrupt();
+      } finally {
+         networkManager.closeChannel(new net.minecraft.util.ChatComponentText("Ban check finished"));
       }
    }
 }

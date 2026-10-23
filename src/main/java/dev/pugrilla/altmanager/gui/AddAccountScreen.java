@@ -152,10 +152,12 @@ public final class AddAccountScreen extends GuiScreen {
             chooser.showOpenDialog(null);
             File[] selectedFiles = chooser.getSelectedFiles();
             if (selectedFiles.length != 0) {
-               this.primaryField.setText(Arrays.stream(selectedFiles).map(File::getAbsolutePath).collect(Collectors.joining("|")));
+               String paths = Arrays.stream(selectedFiles).map(File::getAbsolutePath).collect(Collectors.joining("|"));
+               this.mc.addScheduledTask(() -> {
+                  this.primaryField.setText(paths);
+                  this.setCookieFileValid();
+               });
             }
-
-            this.setCookieFileValid();
          });
       } else if (guibutton == this.randomButton) {
          this.secondaryField.setText(UUID.randomUUID().toString().replace("-", ""));
@@ -314,13 +316,13 @@ public final class AddAccountScreen extends GuiScreen {
                   uuid = "";
                }
 
-               if (this.primaryField.getText().equals(s)) {
-                  final String resolved = uuid;
-                  this.mc.addScheduledTask(() -> {
+               final String resolved = uuid;
+               this.mc.addScheduledTask(() -> {
+                  if (this.getAccountType() == AccountType.SESSION && this.primaryField.getText().equals(s)) {
                      this.secondaryField.setText(resolved);
                      this.setButtonsAndVisibility();
-                  });
-               }
+                  }
+               });
             });
          }
       }
@@ -379,12 +381,16 @@ public final class AddAccountScreen extends GuiScreen {
             this.secondaryField.yPosition - 12,
             10526880
          );
-         this.secondaryField.drawTextBox();
+         if (this.getAccountType() == AccountType.CREDENTIALS || this.getAccountType() == AccountType.BROWSER) {
+            AltManagerUtils.drawPasswordField(this.secondaryField);
+         } else {
+            this.secondaryField.drawTextBox();
+         }
       }
 
       if (this.tokenField.getVisible()) {
          this.drawString(this.fontRendererObj, "Token", this.width / 2 - 100, this.tokenField.yPosition - 12, 10526880);
-         this.tokenField.drawTextBox();
+         AltManagerUtils.drawPasswordField(this.tokenField);
       }
 
       super.drawScreen(i, j, f);
@@ -408,8 +414,10 @@ public final class AddAccountScreen extends GuiScreen {
    }
 
    private void addBrowserAccount(String s) {
-      this.statusRenderer.setStatus(EnumChatFormatting.GREEN + "Processing refresh token...", 1500);
-      this.secondaryField.setText(s);
+      this.mc.addScheduledTask(() -> {
+         this.statusRenderer.setStatus(EnumChatFormatting.GREEN + "Processing refresh token...", 1500);
+         this.secondaryField.setText(s);
+      });
       this.taskLock.execute(() -> {
          BrowserAccount account = new BrowserAccount(s);
          LoginResult result = account.login();
@@ -478,6 +486,10 @@ public final class AddAccountScreen extends GuiScreen {
 
       this.createButton.yPosition = i;
       this.cancelButton.yPosition = i + 24;
+   }
+
+   boolean isBusy() {
+      return this.taskLock.isLocked();
    }
 
    AltManager getAltManager() {

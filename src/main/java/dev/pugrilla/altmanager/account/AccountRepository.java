@@ -7,6 +7,7 @@ import dev.pugrilla.altmanager.util.ColorUtils;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiListExtended.IGuiListEntry;
 import net.minecraft.client.renderer.GlStateManager;
@@ -19,7 +20,7 @@ public final class AccountRepository implements IGuiListEntry {
    private final List<AbstractAccount> accounts = new ArrayList<>();
    private AbstractAccount selectedAccount;
    private final RepositoryEncryption encryption;
-   private List<AbstractAccount> viewingAccounts;
+   private volatile List<AbstractAccount> viewingAccounts;
 
    public AccountRepository(String s, AltManager altmanager, long i, RepositoryEncryption RepositoryEncryption) {
       this.altManager = altmanager;
@@ -70,9 +71,9 @@ public final class AccountRepository implements IGuiListEntry {
       AccountSortMode AccountSortMode = this.altManager.getStorageManager().getAccountSortMode();
       ArrayList<AbstractAccount> arraylist = new ArrayList<>(this.accounts);
       arraylist.sort(AccountSortMode.getComparator());
-      String s = this.altManager.getStorageManager().getSearchTerm().toLowerCase();
+      String s = this.altManager.getStorageManager().getSearchTerm().toLowerCase(Locale.ROOT);
       if (!s.isEmpty()) {
-         arraylist.removeIf(account -> !account.getUsername().toLowerCase().contains(s));
+         arraylist.removeIf(account -> !account.getUsername().toLowerCase(Locale.ROOT).contains(s));
       }
 
       this.viewingAccounts = arraylist;
@@ -110,8 +111,13 @@ public final class AccountRepository implements IGuiListEntry {
 
    public void deleteAccount(AbstractAccount AbstractAccount) {
       if (this.accounts.remove(AbstractAccount)) {
+         if (this.selectedAccount == AbstractAccount) {
+            this.selectedAccount = this.accounts.isEmpty() ? null : this.accounts.get(0);
+         }
          AbstractAccount.setRepository(null);
-         this.altManager.getStorageManager().setAutoSaveRequired();
+         if (this.altManager != null) {
+            this.altManager.getStorageManager().setAutoSaveRequired();
+         }
          this.invalidateViewingAccountList();
       }
    }
@@ -183,6 +189,9 @@ public final class AccountRepository implements IGuiListEntry {
          }
 
          this.selectedAccount = AbstractAccount;
+         if (this.altManager != null) {
+            this.altManager.getStorageManager().setAutoSaveRequired();
+         }
       }
    }
 
@@ -202,7 +211,7 @@ public final class AccountRepository implements IGuiListEntry {
          + ", accountList="
          + this.accounts
          + ", selectedAccount="
-         + this.selectedAccount
+         + (this.selectedAccount == null ? null : this.selectedAccount.getUsername())
          + ", encryption="
          + this.encryption
          + '}';

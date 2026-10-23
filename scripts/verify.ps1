@@ -11,7 +11,10 @@ if (-not $SkipBuild) {
    & (Join-Path $PSScriptRoot 'build.ps1') -Offline:$Offline
 }
 
-$artifact = Join-Path $projectRoot 'build\libs\pug-alt-manager-1.1.jar'
+$versionLine = Get-Content -LiteralPath (Join-Path $projectRoot 'gradle.properties') | Where-Object { $_ -match '^modVersion=' }
+$modVersion = ($versionLine -split '=', 2)[1].Trim()
+if ($modVersion -notmatch '^\d+\.\d+(?:\.\d+)?$') { throw 'Invalid modVersion in gradle.properties.' }
+$artifact = Join-Path $projectRoot "build\libs\pug-alt-manager-$modVersion.jar"
 if (-not (Test-Path -LiteralPath $artifact)) {
    throw "Production artifact does not exist: $artifact"
 }
@@ -36,9 +39,11 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $classCount = @($entries | Where-Object { $_ -like '*.class' }).Count
-if ($classCount -ne 78) {
-   throw "Expected 78 class entries, found $classCount."
+if ($classCount -lt 78) {
+   throw "Expected at least the original 78 class entries, found $classCount."
 }
+$developmentEntries = @($entries | Where-Object { $_ -like '*Test.class' -or $_ -like 'org/junit/*' })
+if ($developmentEntries.Count -ne 0) { throw 'Test classes were packaged in the production JAR.' }
 
 $obfuscatedEntries = @($entries | Where-Object { $_ -like 'f75/*' })
 if ($obfuscatedEntries.Count -ne 0) {

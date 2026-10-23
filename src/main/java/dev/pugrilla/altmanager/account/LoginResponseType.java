@@ -6,7 +6,8 @@ public enum LoginResponseType {
    DOES_NOT_OWN_MINECRAFT("This account doesn't own Minecraft.", "No Minecraft"),
    ABUSE_LOCKED("This account is permanently locked.", "Abuse Locked"),
    RECOVERY_LOCKED("This account is locked for recovery.", "Recovery Locked"),
-   INVALID_ACCOUNT("Failed to login.", "Invalid Account"),
+   INVALID_ACCOUNT("Session is invalid or expired. Sign in again if refreshing fails.", "Invalid Account"),
+   NETWORK_ERROR("Authentication service unavailable. Please try again.", "Network Error"),
    RATE_LIMITED("You are sending too many requests, try again later.", "Rate Limited"),
    VALID_RATE_LIMITED("This account is valid but you are sending too many requests, try again later.", "Valid, Rate Limited"),
    CORRUPT_DATA("This account data is corrupt or empty.", "Internal Data Corruption");

@@ -24,6 +24,7 @@ public final class SelectRepositoryScreen extends GuiScreen {
    private GuiButton deleteAllButton;
    private GuiButton importButton;
    private GuiButton createButton;
+   private GuiButton confirmButton;
 
    public SelectRepositoryScreen(GuiScreen guiscreen, AltManager altmanager, Consumer<AccountRepository> consumer) {
       this.previousScreen = guiscreen;
@@ -43,7 +44,7 @@ public final class SelectRepositoryScreen extends GuiScreen {
       this.buttonList.add(this.deleteAllButton = new GuiButton(3, 3, 4, 90, 20, EnumChatFormatting.RED + "Delete All"));
       this.buttonList.add(this.importButton = new GuiButton(7, this.width - 97, 4, 90, 20, "Import..."));
       this.buttonList.add(this.manageButton = new GuiButton(1, this.width / 2 - 154, this.height - 28, 110, 20, "Manage repository"));
-      this.buttonList.add(new GuiButton(6, this.width / 2 - 40, this.height - 28, 80, 20, "Confirm"));
+      this.buttonList.add(this.confirmButton = new GuiButton(6, this.width / 2 - 40, this.height - 28, 80, 20, "Confirm"));
       this.buttonList.add(this.createButton = new GuiButton(4, this.width / 2 + 44, this.height - 28, 110, 20, "Create repository"));
       this.setButtonsEnabled();
    }
@@ -52,12 +53,19 @@ public final class SelectRepositoryScreen extends GuiScreen {
       this.manageButton.enabled = this.altManager.getMainScreen().getSelectedRepository() != null;
       this.deleteAllButton.visible = this.altManager.getStorageManager().getRepositoryCount() != 0;
       if (this.selectionConsumer != null) {
+         AccountRepository target = this.altManager.getStorageManager().getSelectedRepository();
+         this.confirmButton.enabled = target != null && target.getEncryption().isDecrypted();
          this.manageButton.visible = this.deleteAllButton.visible = this.createButton.visible = false;
       }
    }
 
    protected void keyTyped(char c0, int i) throws IOException {
-      if (i == 1 || i == 28) {
+      if (i == 1) {
+         if (this.selectionConsumer != null) {
+            this.altManager.getStorageManager().setSelectedRepository(this.selectedRepository);
+         }
+         this.mc.displayGuiScreen(this.previousScreen);
+      } else if (i == 28 && this.confirmButton.enabled) {
          this.back();
       }
    }

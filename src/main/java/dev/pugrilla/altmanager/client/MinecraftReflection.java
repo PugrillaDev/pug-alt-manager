@@ -11,7 +11,7 @@ import net.minecraft.util.IChatComponent;
 import net.minecraft.util.Session;
 public final class MinecraftReflection {
    private static Field minecraftSessionField = findFieldByType(Minecraft.class, Session.class);
-   private static Field connectingNetworkManagerField;
+   private static Field connectingNetworkManagerField = findFieldByType(GuiConnecting.class, NetworkManager.class);
    private static Field disconnectReasonField = findFieldByType(GuiDisconnected.class, IChatComponent.class);
    private static Field findFieldByType(Class<?> oclass, Class<?> oclass1) {
       Field[] afield = oclass.getDeclaredFields();

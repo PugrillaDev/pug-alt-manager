@@ -22,7 +22,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -35,36 +34,47 @@ public final class FileStorageManager implements StorageManager {
    private static final String STORAGE_DIRECTORY_NAME = ".pugaltmanager";
    private static final String LEGACY_STORAGE_DIRECTORY_NAME = ".micsaltman";
    private final AltManager altManager;
+   private final org.apache.logging.log4j.Logger logger = org.apache.logging.log4j.LogManager.getLogger(AltManager.MOD_NAME);
    private final File storageDirectory;
    private final File accountsFile;
    private final File accountsBackupFile;
    private final List<AccountRepository> repositories = new ArrayList<>();
    private final List<AccountRepository> readOnlyRepositories = Collections.unmodifiableList(this.repositories);
-   private Long autoSaveRequestedAt;
+   private volatile Long autoSaveRequestedAt;
    private AccountRepository selectedRepository;
    private AccountType selectedAddAccountType = AccountType.values()[0];
    private boolean loaded;
    private String lastCookieFilePath = Objects.requireNonNull(System.getProperty("user.home"), new File("").getAbsolutePath());
    private String lastSkinFilePath = Objects.requireNonNull(System.getProperty("user.home"), new File("").getAbsolutePath());
-   private final Map<UUID, Long> banExpiries = new HashMap<>();
+   private final Map<UUID, Long> banExpiries = new java.util.concurrent.ConcurrentHashMap<>();
    private AccountDoubleClickAction accountDoubleClickAction = AccountDoubleClickAction.LOGIN;
    private boolean showLoggedInUser = true;
    private boolean multiplayerButtonVisible = true;
-   private boolean autoRefreshSession = true;
+   private volatile boolean autoRefreshSession = true;
    private SkinVariant skinVariant = SkinVariant.CLASSIC;
    private AccountSortMode accountSortMode = AccountSortMode.values()[0];
    private String searchTerm = "";
    private int loadedStorageVersion = STORAGE_VERSION;
 
    public FileStorageManager(AltManager altmanager) {
+      this(altmanager, defaultStorageDirectory(), true);
+   }
+
+   private static File defaultStorageDirectory() {
+      String appData = System.getenv("APPDATA");
+      return new File(appData == null ? System.getProperty("user.home") : appData, STORAGE_DIRECTORY_NAME);
+   }
+
+   FileStorageManager(AltManager altmanager, File directory, boolean backgroundSaving) {
       this.altManager = altmanager;
-      File appDataDirectory = new File(Objects.requireNonNull(System.getenv("APPDATA"), System.getProperty("user.home")));
-      this.storageDirectory = new File(appDataDirectory, STORAGE_DIRECTORY_NAME);
+      this.storageDirectory = directory;
       if (!this.storageDirectory.exists() && !this.storageDirectory.mkdirs()) {
          throw new RuntimeException("Failed to create directory: " + this.storageDirectory.getAbsolutePath());
       }
 
-      this.migrateLegacyStorage(new File(appDataDirectory, LEGACY_STORAGE_DIRECTORY_NAME));
+      if (backgroundSaving) {
+         this.migrateLegacyStorage(new File(this.storageDirectory.getParentFile(), LEGACY_STORAGE_DIRECTORY_NAME));
+      }
 
       this.accountsFile = new File(this.storageDirectory, "accounts.dat");
       this.accountsBackupFile = new File(this.storageDirectory, "accounts.dat.backup");
@@ -88,13 +98,17 @@ public final class FileStorageManager implements StorageManager {
          try {
             Files.copy(this.accountsFile.toPath(), this.accountsBackupFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
          } catch (IOException exception) {
-            this.altManager.getLogger().warn("Could not update the account database backup", exception);
+            this.logger.warn("Could not update the account database backup", exception);
          }
       }
 
       this.loaded = true;
-      new Thread(this::startPeriodicAutoSaveThread, "Pug Alt Manager Periodic Saving").start();
-      Runtime.getRuntime().addShutdownHook(new Thread(this::shutdownSave, "Pug Alt Manager Save"));
+      if (backgroundSaving) {
+         Thread saver = new Thread(this::startPeriodicAutoSaveThread, "Pug Alt Manager Periodic Saving");
+         saver.setDaemon(true);
+         saver.start();
+         Runtime.getRuntime().addShutdownHook(new Thread(this::shutdownSave, "Pug Alt Manager Save"));
+      }
    }
 
    private void migrateLegacyStorage(File legacyDirectory) {
@@ -112,9 +126,9 @@ public final class FileStorageManager implements StorageManager {
 
          try {
             Files.copy(legacyFile.toPath(), destinationFile.toPath());
-            this.altManager.getLogger().info("Migrated legacy storage file {}", fileName);
+            this.logger.info("Migrated legacy storage file {}", fileName);
          } catch (IOException migrationFailure) {
-            this.altManager.getLogger().warn("Could not migrate legacy storage file " + fileName, migrationFailure);
+            this.logger.warn("Could not migrate legacy storage file " + fileName, migrationFailure);
          }
       }
    }
@@ -147,9 +161,9 @@ public final class FileStorageManager implements StorageManager {
             Minecraft.getMinecraft().addScheduledTask(() -> {
                try {
                   this.save();
-                  this.altManager.getLogger().info("Successful account auto-save");
+                  this.logger.info("Successful account auto-save");
                } catch (Throwable throwable) {
-                  this.altManager.getLogger().error("Failed to auto-save", throwable);
+                  this.logger.error("Failed to auto-save", throwable);
                   this.autoSaveRequestedAt = System.currentTimeMillis();
                }
             });
@@ -160,23 +174,39 @@ public final class FileStorageManager implements StorageManager {
    public void setAutoSaveNowIfRequired() {
       if (this.autoSaveRequestedAt != null) {
          this.autoSaveRequestedAt = 0L;
-         this.altManager.getLogger().info("Forced auto-save sequence to start next second");
+         this.logger.info("Forced auto-save sequence to start next second");
       }
    }
 
-   public void setAutoSaveRequired() {
+   public synchronized void setAutoSaveRequired() {
       if (this.autoSaveRequestedAt == null) {
          this.autoSaveRequestedAt = System.currentTimeMillis();
-         this.altManager.getLogger().info("Started auto-save sequence");
+         this.logger.info("Started auto-save sequence");
       }
    }
 
    private void load() throws IOException {
       if (!this.accountsFile.exists()) {
-         this.altManager.getLogger().info("Account list doesn't exist. Starting from scratch");
-      } else {
-         byte[] abyte = Files.readAllBytes(this.accountsFile.toPath());
-         this.fromBytes(abyte);
+         this.logger.info("Account list doesn't exist. Starting from scratch");
+         return;
+      }
+      try {
+         this.fromBytes(Files.readAllBytes(this.accountsFile.toPath()));
+      } catch (IOException | RuntimeException failure) {
+         this.repositories.clear();
+         this.banExpiries.clear();
+         this.selectedRepository = null;
+         if (!this.accountsBackupFile.isFile()) {
+            throw new IOException("Cannot read account database and no backup is available", failure);
+         }
+         try {
+            this.fromBytes(Files.readAllBytes(this.accountsBackupFile.toPath()));
+         } catch (IOException | RuntimeException backupFailure) {
+            throw new IOException("Cannot read account database or backup", backupFailure);
+         }
+         Files.copy(this.accountsFile.toPath(), new File(this.storageDirectory, "accounts.dat.corrupt-" + System.currentTimeMillis()).toPath());
+         Files.copy(this.accountsBackupFile.toPath(), this.accountsFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+         this.logger.warn("Recovered account database from backup; preserved the damaged file");
       }
    }
 
@@ -202,7 +232,7 @@ public final class FileStorageManager implements StorageManager {
       this.accountSortMode = AccountSortMode.values()[datainputstream.readUnsignedByte()];
       this.searchTerm = datainputstream.readUTF();
       int l = datainputstream.readInt();
-      int i1 = datainputstream.readInt();
+      int i1 = readCount(datainputstream, 27);
 
       for (int j1 = 0; j1 < i1; j1++) {
          AccountRepository AccountRepository = readRepository(this.altManager, datainputstream, j);
@@ -216,7 +246,7 @@ public final class FileStorageManager implements StorageManager {
          this.setSelectedRepository((AccountRepository)this.repositories.get(0));
       }
 
-      int k1 = datainputstream.readInt();
+      int k1 = readCount(datainputstream, 24);
 
       for (int l1 = 0; l1 < k1; l1++) {
          UUID uuid = new UUID(datainputstream.readLong(), datainputstream.readLong());
@@ -226,7 +256,16 @@ public final class FileStorageManager implements StorageManager {
       this.accountDoubleClickAction = AccountDoubleClickAction.values()[datainputstream.readInt()];
       this.multiplayerButtonVisible = datainputstream.readBoolean();
       this.showLoggedInUser = datainputstream.readBoolean();
+      this.autoRefreshSession = datainputstream.available() == 0 || datainputstream.readBoolean();
    }
+   private static int readCount(DataInputStream input, int minimumEntrySize) throws IOException {
+      int count = input.readInt();
+      if (count < 0 || count > 100000 || count > input.available() / minimumEntrySize) {
+         throw new IOException("Invalid collection size in account data");
+      }
+      return count;
+   }
+
    public static AccountRepository readRepository(AltManager altmanager, DataInputStream datainputstream, int formatVersion) throws IOException {
       RepositoryEncryption RepositoryEncryption = new RepositoryEncryption(datainputstream.readBoolean());
       if (RepositoryEncryption.isEnabled()) {
@@ -235,7 +274,7 @@ public final class FileStorageManager implements StorageManager {
 
       AccountRepository AccountRepository = new AccountRepository(datainputstream.readUTF(), altmanager, datainputstream.readLong(), RepositoryEncryption);
       AccountRepository.setLastAccessed(datainputstream.readLong());
-      if (AccountRepository.getLastAccessed() > System.currentTimeMillis() || AccountRepository.getCreationTime() > System.currentTimeMillis()) {
+      if (altmanager != null && (AccountRepository.getLastAccessed() > System.currentTimeMillis() || AccountRepository.getCreationTime() > System.currentTimeMillis())) {
          altmanager.getLogger()
             .warn(
                "Repository {} is created/accessed in the future! This may break a lot of things! Last accessed: {} Last created: {}",
@@ -248,7 +287,7 @@ public final class FileStorageManager implements StorageManager {
       }
 
       int i = datainputstream.readInt();
-      int j = datainputstream.readInt();
+      int j = readCount(datainputstream, 49);
 
       for (int k = 0; k < j; k++) {
          AccountType accountType = AccountType.values()[datainputstream.readUnsignedByte()];
@@ -258,7 +297,11 @@ public final class FileStorageManager implements StorageManager {
          long l = datainputstream.readLong();
          long i1 = datainputstream.readLong();
          long j1 = datainputstream.readLong();
-         byte[] abyte = new byte[datainputstream.readInt()];
+         int payloadSize = datainputstream.readInt();
+         if (payloadSize < 0 || payloadSize > datainputstream.available()) {
+            throw new IOException("Invalid account payload length");
+         }
+         byte[] abyte = new byte[payloadSize];
          datainputstream.readFully(abyte);
          AbstractAccount AbstractAccount = accountType.getSupplier().create(s, uuid, s1);
          AbstractAccount.setLastUsed(l);
@@ -287,18 +330,20 @@ public final class FileStorageManager implements StorageManager {
       dataoutputstream.writeInt(list.size());
 
       for (AbstractAccount AbstractAccount : list) {
-         boolean protectAccessToken = formatVersion >= 1 && AccountRepository.getEncryption().isEnabled();
-         dataoutputstream.writeByte(AbstractAccount.getAccountType().ordinal());
-         dataoutputstream.writeUTF(AbstractAccount.getUsername());
-         dataoutputstream.writeLong(AbstractAccount.getUuid().getMostSignificantBits());
-         dataoutputstream.writeLong(AbstractAccount.getUuid().getLeastSignificantBits());
-         dataoutputstream.writeUTF(protectAccessToken ? "" : AbstractAccount.getAccessToken());
-         dataoutputstream.writeLong(AbstractAccount.getLastUsed());
-         dataoutputstream.writeLong(AbstractAccount.getCreationTime());
-         dataoutputstream.writeLong(AbstractAccount.getLastRefresh());
-         byte[] abyte = AbstractAccount.serializeDataToBytes(protectAccessToken);
-         dataoutputstream.writeInt(abyte.length);
-         dataoutputstream.write(abyte);
+         synchronized (AbstractAccount) {
+            boolean protectAccessToken = formatVersion >= 1 && AccountRepository.getEncryption().isEnabled();
+            dataoutputstream.writeByte(AbstractAccount.getAccountType().ordinal());
+            dataoutputstream.writeUTF(AbstractAccount.getUsername());
+            dataoutputstream.writeLong(AbstractAccount.getUuid().getMostSignificantBits());
+            dataoutputstream.writeLong(AbstractAccount.getUuid().getLeastSignificantBits());
+            dataoutputstream.writeUTF(protectAccessToken ? "" : AbstractAccount.getAccessToken());
+            dataoutputstream.writeLong(AbstractAccount.getLastUsed());
+            dataoutputstream.writeLong(AbstractAccount.getCreationTime());
+            dataoutputstream.writeLong(AbstractAccount.getLastRefresh());
+            byte[] abyte = AbstractAccount.serializeDataToBytes(protectAccessToken);
+            dataoutputstream.writeInt(abyte.length);
+            dataoutputstream.write(abyte);
+         }
       }
    }
 
@@ -306,11 +351,11 @@ public final class FileStorageManager implements StorageManager {
       try {
          this.save();
       } catch (Throwable throwable) {
-         this.altManager.getLogger().error("Failed to save accounts on shutdown", throwable);
+         this.logger.error("Failed to save accounts on shutdown", throwable);
       }
    }
 
-   public void save() throws IOException {
+   public synchronized void save() throws IOException {
       byte[] abyte = this.toBytes();
       File temporaryFile = File.createTempFile("accounts-", ".tmp", this.storageDirectory);
 
@@ -369,6 +414,7 @@ public final class FileStorageManager implements StorageManager {
       dataoutputstream.writeInt(this.accountDoubleClickAction.ordinal());
       dataoutputstream.writeBoolean(this.multiplayerButtonVisible);
       dataoutputstream.writeBoolean(this.showLoggedInUser);
+      dataoutputstream.writeBoolean(this.autoRefreshSession);
       return bytearrayoutputstream.toByteArray();
    }
 
@@ -387,7 +433,7 @@ public final class FileStorageManager implements StorageManager {
          throw new IllegalStateException();
       }
 
-      this.altManager.getLogger().info("Created account repository {}", new Object[]{AccountRepository.getName()});
+      this.logger.info("Created account repository {}", new Object[]{AccountRepository.getName()});
       this.repositories.add(AccountRepository);
       this.setAutoSaveRequired();
    }
@@ -400,7 +446,7 @@ public final class FileStorageManager implements StorageManager {
    @Override
    public void deleteRepository(AccountRepository AccountRepository) {
       if (this.repositories.remove(AccountRepository)) {
-         this.altManager.getLogger().info("Deleted account repository {}", new Object[]{AccountRepository.getName()});
+         this.logger.info("Deleted account repository {}", new Object[]{AccountRepository.getName()});
          this.setAutoSaveRequired();
       }
 
@@ -422,7 +468,8 @@ public final class FileStorageManager implements StorageManager {
    @Override
    public void setSelectedRepository(AccountRepository AccountRepository) {
       this.selectedRepository = AccountRepository;
-      if (this.altManager.getMainScreen() != null) {
+      this.setAutoSaveRequired();
+      if (this.altManager != null && this.altManager.getMainScreen() != null) {
          this.altManager.getMainScreen().getMultiSelectionAccounts().clear();
       }
    }
@@ -452,6 +499,9 @@ public final class FileStorageManager implements StorageManager {
    @Override
    public void setBanExpiry(UUID uuid, long i) {
       this.banExpiries.put(uuid, i);
+      for (AccountRepository repository : this.repositories) {
+         repository.invalidateViewingAccountList();
+      }
       this.setAutoSaveRequired();
    }
 
@@ -463,6 +513,7 @@ public final class FileStorageManager implements StorageManager {
    @Override
    public void setAccountDoubleClickAction(AccountDoubleClickAction AccountDoubleClickAction) {
       this.accountDoubleClickAction = AccountDoubleClickAction;
+      this.setAutoSaveRequired();
    }
 
    @Override
@@ -473,6 +524,7 @@ public final class FileStorageManager implements StorageManager {
    @Override
    public void setShowLoggedInUser(boolean flag) {
       this.showLoggedInUser = flag;
+      this.setAutoSaveRequired();
    }
 
    @Override
@@ -483,6 +535,7 @@ public final class FileStorageManager implements StorageManager {
    @Override
    public void setMultiplayerButtonVisible(boolean flag) {
       this.multiplayerButtonVisible = flag;
+      this.setAutoSaveRequired();
    }
 
    @Override
@@ -531,6 +584,7 @@ public final class FileStorageManager implements StorageManager {
    @Override
    public void setSearchTerm(String s) {
       this.searchTerm = s;
+      this.setAutoSaveRequired();
    }
 
    @Override
@@ -541,10 +595,11 @@ public final class FileStorageManager implements StorageManager {
    @Override
    public void setAutoRefreshSession(boolean flag) {
       this.autoRefreshSession = flag;
+      this.setAutoSaveRequired();
    }
 
    private void checkSelected() {
-      AccountRepository AccountRepository = this.altManager.getMainScreen().getSelectedRepository();
+      AccountRepository AccountRepository = this.getSelectedRepository();
       if (!this.repositories.contains(AccountRepository)) {
          this.setSelectedRepository(this.repositories.isEmpty() ? null : (AccountRepository)this.repositories.get(0));
       }

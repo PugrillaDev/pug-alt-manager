@@ -10,7 +10,8 @@ This project reconstructs the behavior and storage format of Mic's Alt Manager 1
 - Multiple local account repositories with optional encryption
 - Repository import and export
 - Account search, sorting, and multi-selection
-- Automatic session refresh and persistence
+- Expiry-aware session refresh, validation, and persistence
+- Shared player-head caching across repositories and restarts
 - Skin upload, skin stealing, and random-skin support
 - Hypixel ban-status checks
 - Native Windows file dialogs with a Swing fallback
@@ -33,8 +34,8 @@ $env:JAVA_HOME = 'C:\Program Files\Java\jdk-1.8'
 
 The production and source artifacts are generated in `build/libs/`:
 
-- `pug-alt-manager-1.1.jar`
-- `pug-alt-manager-1.1-sources.jar`
+- `pug-alt-manager-1.2.jar`
+- `pug-alt-manager-1.2-sources.jar`
 
 Convenience scripts are also available:
 
@@ -73,6 +74,7 @@ Convenience scripts are also available:
 
 ## Documentation
 
+- [Version 1.2 audit and behavior notes](docs/audit-1.2.md)
 - [Architecture](docs/architecture.md)
 - [Deobfuscation and verification](docs/deobfuscation.md)
 - [Original class mapping](docs/class-mapping.md)
@@ -84,7 +86,7 @@ Convenience scripts are also available:
 
 - All reconstructed source compiles with Java 8.
 - ForgeGradle `reobfJar` produces an installable Minecraft 1.8.9 artifact.
-- The artifact retains the original 78-class footprint.
+- The artifact includes the original feature set plus session coordination and cache helpers.
 - No original `f75` package or decompiler placeholder remains.
 - An isolated Forge client smoke test completed the full mod-loading lifecycle.
 

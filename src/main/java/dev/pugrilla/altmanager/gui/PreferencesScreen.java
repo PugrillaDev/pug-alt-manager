@@ -73,7 +73,7 @@ public final class PreferencesScreen extends GuiScreen {
             j
          );
       } else if (this.autoRefreshButton.isMouseOver()) {
-         this.drawCreativeTabHoveringText("Automatically refresh accounts when the session token hasn't been updated in 24 hours.", i, j);
+         this.drawCreativeTabHoveringText("Refresh expired or rejected sessions automatically before using the account.", i, j);
       }
    }
 

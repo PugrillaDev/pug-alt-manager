@@ -5,42 +5,93 @@ import dev.pugrilla.altmanager.skin.SkinVariant;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
 import java.net.HttpURLConnection;
 import java.net.URI;
-import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
-import javax.net.ssl.HttpsURLConnection;
+import java.io.OutputStream;
+import net.minecraft.util.Session;
+import dev.pugrilla.altmanager.account.LoginResult;
+import dev.pugrilla.altmanager.account.LoginResponseType;
+import dev.pugrilla.altmanager.util.AltManagerUtils;
 import org.apache.commons.io.IOUtils;
 public final class MinecraftServicesApi {
    private static final List<String> OWNERSHIP_ENTITLEMENTS = Arrays.asList("game_minecraft", "product_minecraft", "product_game_pass_pc");
+
+   public static final class Response {
+      public final int status;
+      public final String body;
+
+      private Response(int status, String body) {
+         this.status = status;
+         this.body = body;
+      }
+   }
+
+   public static Response request(String method, String url, String token, String contentType, byte[] body) throws IOException {
+      HttpURLConnection connection = (HttpURLConnection)URI.create(url).toURL().openConnection();
+      try {
+         connection.setConnectTimeout(5000);
+         connection.setReadTimeout(10000);
+         connection.setInstanceFollowRedirects(false);
+         connection.setRequestMethod(method);
+         connection.setRequestProperty("Accept", "application/json");
+         if (token != null) {
+            connection.setRequestProperty("Authorization", "Bearer " + token);
+         }
+         if (body != null) {
+            connection.setRequestProperty("Content-Type", contentType);
+            connection.setDoOutput(true);
+            try (OutputStream output = connection.getOutputStream()) {
+               output.write(body);
+            }
+         }
+         int status = connection.getResponseCode();
+         InputStream stream = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
+         try (InputStream input = stream) {
+            return new Response(status, input == null ? "" : IOUtils.toString(input, StandardCharsets.UTF_8));
+         }
+      } finally {
+         connection.disconnect();
+      }
+   }
+
+   public static LoginResult validateSession(Session session) {
+      try {
+         Response response = request("GET", "https://api.minecraftservices.com/minecraft/profile", session.getToken(), null, null);
+         if (response.status == 401 || response.status == 403) {
+            return new LoginResult(LoginResponseType.INVALID_ACCOUNT);
+         }
+         if (response.status == 429) {
+            return new LoginResult(LoginResponseType.RATE_LIMITED);
+         }
+         if (response.status == 404) {
+            return new LoginResult(LoginResponseType.NO_MINECRAFT_PROFILE);
+         }
+         if (response.status != 200) {
+            return new LoginResult(LoginResponseType.NETWORK_ERROR);
+         }
+         JsonObject profile = new JsonParser().parse(response.body).getAsJsonObject();
+         UUID uuid = AltManagerUtils.parseUuid(profile.get("id").getAsString());
+         if (uuid == null || !uuid.equals(session.getProfile().getId())) {
+            return new LoginResult(LoginResponseType.INVALID_ACCOUNT);
+         }
+         return new LoginResult(session, LoginResponseType.SUCCESS);
+      } catch (IOException | RuntimeException failure) {
+         return new LoginResult(LoginResponseType.NETWORK_ERROR);
+      }
+   }
    public static NameChangeStatus getNameChangeStatus(String s) {
       try {
-         HttpsURLConnection httpsurlconnection = (HttpsURLConnection)URI.create("https://api.minecraftservices.com/minecraft/profile/namechange")
-            .toURL()
-            .openConnection();
-         httpsurlconnection.setRequestProperty("Authorization", "Bearer " + s);
-         httpsurlconnection.setRequestMethod("GET");
-         httpsurlconnection.setConnectTimeout(5000);
-         httpsurlconnection.setReadTimeout(5000);
-         httpsurlconnection.connect();
-         BufferedReader bufferedreader = new BufferedReader(new InputStreamReader(httpsurlconnection.getInputStream()));
-         JsonObject jsonobject = new JsonParser().parse(bufferedreader).getAsJsonObject();
-         int i = httpsurlconnection.getResponseCode();
-         httpsurlconnection.disconnect();
-         bufferedreader.close();
-         switch (i) {
+         Response response = request("GET", "https://api.minecraftservices.com/minecraft/profile/namechange", s, null, null);
+         switch (response.status) {
             case 200:
-               if (jsonobject.get("nameChangeAllowed").getAsBoolean()) {
+               if (new JsonParser().parse(response.body).getAsJsonObject().get("nameChangeAllowed").getAsBoolean()) {
                   return NameChangeStatus.AVAILABLE;
                }
 
@@ -52,184 +103,91 @@ public final class MinecraftServicesApi {
             default:
                return NameChangeStatus.ERROR;
          }
-      } catch (IOException ioexception) {
+      } catch (IOException | RuntimeException ioexception) {
          return NameChangeStatus.ERROR;
       }
    }
-   public static int setProfileName(String s, String s1) {
+   public static int setProfileName(String token, String name) {
+      JsonObject body = new JsonObject();
+      body.addProperty("profileName", name);
+      return sendJson("PUT", "https://api.minecraftservices.com/minecraft/profile/name/" + name, token, body);
+   }
+
+   public static int setSkinFromUrl(String token, String url, SkinVariant variant) {
+      JsonObject body = new JsonObject();
+      body.addProperty("variant", variant.getInternalName());
+      body.addProperty("url", url);
+      return sendJson("POST", "https://api.minecraftservices.com/minecraft/profile/skins", token, body);
+   }
+
+   private static int sendJson(String method, String url, String token, JsonObject body) {
       try {
-         HttpsURLConnection httpsurlconnection = (HttpsURLConnection)URI.create("https://api.minecraftservices.com/minecraft/profile/name/" + s1)
-            .toURL()
-            .openConnection();
-         httpsurlconnection.setRequestProperty("Authorization", "Bearer " + s);
-         httpsurlconnection.setRequestProperty("Content-Type", "application/json");
-         httpsurlconnection.setRequestMethod("PUT");
-         httpsurlconnection.setDoOutput(true);
-         httpsurlconnection.getOutputStream().write(("{\"profileName\":\"" + s1 + "\"}").getBytes(StandardCharsets.UTF_8));
-         httpsurlconnection.setConnectTimeout(5000);
-         httpsurlconnection.setReadTimeout(5000);
-         httpsurlconnection.connect();
-         int i = httpsurlconnection.getResponseCode();
-         httpsurlconnection.disconnect();
-         return i;
-      } catch (IOException ioexception) {
+         return request(method, url, token, "application/json", body.toString().getBytes(StandardCharsets.UTF_8)).status;
+      } catch (IOException failure) {
          return -1;
       }
    }
-   public static int setSkinFromUrl(String s, String s1, SkinVariant SkinVariant) {
+
+   public static int setSkinFromFile(String token, byte[] image, File file, SkinVariant variant) {
+      String boundary = UUID.randomUUID().toString();
       try {
-         HttpsURLConnection httpsurlconnection = (HttpsURLConnection)URI.create("https://api.minecraftservices.com/minecraft/profile/skins")
-            .toURL()
-            .openConnection();
-         httpsurlconnection.setRequestProperty("Authorization", "Bearer " + s);
-         httpsurlconnection.setRequestProperty("Content-Type", "application/json");
-         httpsurlconnection.setRequestMethod("POST");
-         httpsurlconnection.setDoOutput(true);
-         httpsurlconnection.getOutputStream()
-            .write(("{\"variant\":\"" + SkinVariant.getInternalName() + "\",\"url\":\"" + s1 + "\"}").getBytes(StandardCharsets.UTF_8));
-         httpsurlconnection.setConnectTimeout(5000);
-         httpsurlconnection.setReadTimeout(5000);
-         httpsurlconnection.connect();
-         int i = httpsurlconnection.getResponseCode();
-         httpsurlconnection.disconnect();
-         return i;
-      } catch (IOException ioexception) {
+         java.io.ByteArrayOutputStream body = new java.io.ByteArrayOutputStream();
+         body.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"variant\"\r\n\r\n"
+            + variant.getInternalName() + "\r\n--" + boundary
+            + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"skin.png\"\r\nContent-Type: image/png\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+         body.write(image);
+         body.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+         return request("POST", "https://api.minecraftservices.com/minecraft/profile/skins", token,
+            "multipart/form-data; boundary=" + boundary, body.toByteArray()).status;
+      } catch (IOException failure) {
          return -1;
       }
    }
-   public static int setSkinFromFile(String s, byte[] abyte, File file1, SkinVariant SkinVariant) {
-      try {
-         HttpsURLConnection httpsurlconnection = (HttpsURLConnection)URI.create("https://api.minecraftservices.com/minecraft/profile/skins")
-            .toURL()
-            .openConnection();
-         httpsurlconnection.setRequestProperty("Authorization", "Bearer " + s);
-         String s1 = UUID.randomUUID().toString();
-         httpsurlconnection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + s1);
-         httpsurlconnection.setRequestMethod("POST");
-         httpsurlconnection.setDoOutput(true);
-         PrintWriter printwriter = new PrintWriter(new OutputStreamWriter(httpsurlconnection.getOutputStream(), StandardCharsets.UTF_8), true);
-         String s2 = "\r\n";
-         printwriter.append("--").append(s1).append("\r\n");
-         printwriter.append("Content-Disposition: form-data; name=\"variant\"").append("\r\n");
-         printwriter.append("\r\n");
-         printwriter.append(SkinVariant.getInternalName()).append("\r\n");
-         printwriter.append("--" + s1).append("\r\n");
-         printwriter.append("Content-Disposition: form-data; name=\"file\"; filename=\"skin.png\"").append("\r\n");
-         printwriter.append("Content-Type: " + URLConnection.guessContentTypeFromName(file1.getName())).append("\r\n");
-         printwriter.append("\r\n");
-         printwriter.flush();
-         httpsurlconnection.getOutputStream().write(abyte);
-         printwriter.append("\r\n");
-         printwriter.append("--" + s1 + "--").append("\r\n");
-         printwriter.flush();
-         httpsurlconnection.setConnectTimeout(5000);
-         httpsurlconnection.setReadTimeout(5000);
-         httpsurlconnection.connect();
-         int i = httpsurlconnection.getResponseCode();
-         httpsurlconnection.disconnect();
-         return i;
-      } catch (IOException ioexception) {
-         return -1;
-      }
+
+   public static int createProfile(String token, String name) {
+      JsonObject body = new JsonObject();
+      body.addProperty("profileName", name);
+      return sendJson("POST", "https://api.minecraftservices.com/minecraft/profile", token, body);
    }
-   public static int createProfile(String s, String s1) {
+
+   public static boolean ownsMinecraft(String token) {
       try {
-         HttpsURLConnection httpsurlconnection = (HttpsURLConnection)URI.create("https://api.minecraftservices.com/minecraft/profile").toURL().openConnection();
-         httpsurlconnection.setRequestProperty("Authorization", "Bearer " + s);
-         httpsurlconnection.setRequestProperty("Content-Type", "application/json");
-         httpsurlconnection.setRequestMethod("POST");
-         httpsurlconnection.setDoOutput(true);
-         httpsurlconnection.getOutputStream().write(("{\"profileName\":\"" + s1 + "\"}").getBytes(StandardCharsets.UTF_8));
-         httpsurlconnection.setConnectTimeout(5000);
-         httpsurlconnection.setReadTimeout(5000);
-         httpsurlconnection.connect();
-         int i = httpsurlconnection.getResponseCode();
-         httpsurlconnection.disconnect();
-         return i;
-      } catch (IOException ioexception) {
-         return -1;
-      }
-   }
-   public static boolean ownsMinecraft(String s) {
-      try {
-         HttpsURLConnection httpsurlconnection = (HttpsURLConnection)URI.create("https://api.minecraftservices.com/entitlements/mcstore")
-            .toURL()
-            .openConnection();
-         httpsurlconnection.setRequestProperty("Accept", "application/json");
-         httpsurlconnection.setRequestProperty("Authorization", "Bearer " + s);
-         httpsurlconnection.setConnectTimeout(15000);
-         httpsurlconnection.setReadTimeout(15000);
-         httpsurlconnection.connect();
-         if (httpsurlconnection.getResponseCode() / 100 != 2) {
+         Response response = request("GET", "https://api.minecraftservices.com/entitlements/mcstore", token, null, null);
+         if (response.status != 200) {
             return false;
          }
-
-         String s1 = IOUtils.toString(httpsurlconnection.getInputStream(), StandardCharsets.UTF_8);
-         JsonObject jsonobject = new JsonParser().parse(s1).getAsJsonObject();
-
-         for (JsonElement jsonelement : jsonobject.getAsJsonArray("items")) {
-            JsonObject jsonobject1 = jsonelement.getAsJsonObject();
-            String s2 = jsonobject1.get("name").getAsString();
-            if (OWNERSHIP_ENTITLEMENTS.contains(s2)) {
+         JsonObject body = new JsonParser().parse(response.body).getAsJsonObject();
+         for (JsonElement item : body.getAsJsonArray("items")) {
+            if (OWNERSHIP_ENTITLEMENTS.contains(item.getAsJsonObject().get("name").getAsString())) {
                return true;
             }
          }
-
-         return false;
-      } catch (IOException ioexception) {
-         return false;
+      } catch (IOException | RuntimeException ignored) {
       }
+      return false;
    }
+
    public static String post(String s, String s1, boolean flag) {
       try {
-         HttpURLConnection httpurlconnection = (HttpURLConnection)URI.create(s).toURL().openConnection();
-         httpurlconnection.setRequestProperty(
-            "User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.0.0 Safari/537.36"
-         );
-         httpurlconnection.setRequestProperty("Content-Type", flag ? "application/json" : "application/x-www-form-urlencoded; charset=UTF-8");
-         httpurlconnection.setRequestProperty("Accept", "application/json");
-         httpurlconnection.setRequestMethod("POST");
-         httpurlconnection.setDoOutput(true);
-         httpurlconnection.getOutputStream().write(s1.getBytes(StandardCharsets.UTF_8));
-         httpurlconnection.setConnectTimeout(5000);
-         httpurlconnection.setReadTimeout(5000);
-         httpurlconnection.connect();
-         int i = httpurlconnection.getResponseCode();
-         InputStream inputstream = i / 100 != 2 && i / 100 != 3 ? httpurlconnection.getErrorStream() : httpurlconnection.getInputStream();
-         if (inputstream == null) {
-            return null;
-         }
-
-         BufferedReader bufferedreader = new BufferedReader(new InputStreamReader(inputstream));
-         StringBuilder stringbuilder = new StringBuilder();
-
-         String s2;
-         while ((s2 = bufferedreader.readLine()) != null) {
-            stringbuilder.append(s2);
-         }
-
-         bufferedreader.close();
-         httpurlconnection.disconnect();
-         return stringbuilder.toString();
+         Response response = request("POST", s, null, flag ? "application/json" : "application/x-www-form-urlencoded; charset=UTF-8",
+            s1.getBytes(StandardCharsets.UTF_8));
+         return response.status / 100 == 2 ? response.body : null;
       } catch (Exception exception) {
          return null;
       }
    }
-   public static String getUuidForUsername(String s) throws IOException {
+   public static String getUuidForUsername(String username) throws IOException {
+      if (!AltManagerUtils.MINECRAFT_USERNAME_PATTERN.matcher(username).matches()) {
+         throw new IOException("Invalid Minecraft username");
+      }
+      Response response = request("GET", "https://api.mojang.com/users/profiles/minecraft/" + username, null, null, null);
+      if (response.status != 200) {
+         throw new IOException("Profile lookup failed (HTTP " + response.status + ")");
+      }
       try {
-         return new JsonParser()
-            .parse(
-               IOUtils.toString(
-                  URI.create("https://api.mojang.com/users/profiles/minecraft/" + s).toURL().openConnection().getInputStream(), StandardCharsets.UTF_8
-               )
-            )
-            .getAsJsonObject()
-            .get("id")
-            .getAsString();
-      } catch (IOException ioexception) {
-         throw ioexception;
-      } catch (Throwable throwable) {
-         throw new IOException(throwable);
+         return new JsonParser().parse(response.body).getAsJsonObject().get("id").getAsString();
+      } catch (RuntimeException failure) {
+         throw new IOException("Invalid profile lookup response");
       }
    }
 }

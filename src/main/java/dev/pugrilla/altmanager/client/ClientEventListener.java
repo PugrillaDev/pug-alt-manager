@@ -3,7 +3,6 @@ package dev.pugrilla.altmanager.client;
 import dev.pugrilla.altmanager.account.AbstractAccount;
 import dev.pugrilla.altmanager.AltManager;
 import dev.pugrilla.altmanager.network.HypixelBanHandler;
-import dev.pugrilla.altmanager.util.AltManagerUtils;
 
 import java.util.List;
 import net.minecraft.client.Minecraft;
@@ -40,12 +39,15 @@ public final class ClientEventListener {
             this.initialAccountApplied = true;
             AbstractAccount AbstractAccount = this.altManager.getStorageManager().getSelectedAccount();
             if (AbstractAccount != null) {
-               AbstractAccount.setMinecraftSession(false);
+               this.altManager.getSessionController().useAccount(AbstractAccount, false, false);
             }
          }
       } else if (post.gui instanceof GuiDisconnected) {
          IChatComponent ichatcomponent = MinecraftReflection.getDisconnectReason((GuiDisconnected)post.gui);
-         this.hypixelBanHandler.handleDisconnectMessage(Minecraft.getMinecraft().getSession().getProfile().getId(), ichatcomponent);
+         if (this.isHypixelServer()) {
+            this.hypixelBanHandler.handleDisconnectMessage(Minecraft.getMinecraft().getSession().getProfile().getId(), ichatcomponent);
+         }
+         this.refreshRejectedSession(ichatcomponent);
          if (this.altManager.getStorageManager().isMultiplayerButtonVisible() && !post.buttonList.isEmpty()) {
             post.buttonList
                .add(new GuiButton(-258581536, post.gui.width / 2 - 100, ((GuiButton)post.buttonList.get(0)).yPosition + 24, "Alt Manager"));
@@ -76,11 +78,14 @@ public final class ClientEventListener {
          }
       }
 
-      throw new RuntimeException("Cannot find realms button. Dump of all buttons: " + AltManagerUtils.dumpGuiButtons(list));
+      list.add(new GuiButton(ACCOUNT_MANAGER_BUTTON_ID, guimainmenu.width - 104, 4, 100, 20, "Alt Manager"));
    }
 
    @SubscribeEvent
    public void onClientChat(ClientChatReceivedEvent clientchatreceivedevent) {
+      if (!this.isHypixelServer()) {
+         return;
+      }
       IChatComponent ichatcomponent = clientchatreceivedevent.message;
       if (ichatcomponent != null) {
          String s = Serializer.componentToJson(ichatcomponent);
@@ -113,6 +118,41 @@ public final class ClientEventListener {
 
    public AltManager getAltManager() {
       return this.altManager;
+   }
+
+   private boolean isHypixelServer() {
+      net.minecraft.client.multiplayer.ServerData server = Minecraft.getMinecraft().getCurrentServerData();
+      if (server == null) {
+         return false;
+      }
+      String host = server.serverIP.toLowerCase(java.util.Locale.ROOT).split(":")[0].replaceAll("\\.$", "");
+      return host.equals("hypixel.net") || host.endsWith(".hypixel.net");
+   }
+
+   private void refreshRejectedSession(IChatComponent reason) {
+      if (reason == null || !this.altManager.getStorageManager().isAutoRefreshSession()
+         || this.altManager.getSessionController().isSwitching()) {
+         return;
+      }
+      String text = (reason.getUnformattedText() + Serializer.componentToJson(reason)).toLowerCase(java.util.Locale.ROOT);
+      if (!text.contains("invalidsession") && !text.contains("invalid session") && !text.contains("failed to authenticate")) {
+         return;
+      }
+      net.minecraft.util.Session current = Minecraft.getMinecraft().getSession();
+      for (dev.pugrilla.altmanager.account.AccountRepository repository : this.altManager.getStorageManager().getRepositories()) {
+         if (!repository.getEncryption().isDecrypted()) {
+            continue;
+         }
+         for (AbstractAccount account : repository.getAccountList()) {
+            if (account.getAccountType() != dev.pugrilla.altmanager.account.AccountType.SESSION
+               && account.getUuid().equals(current.getProfile().getId()) && account.getAccessToken().equals(current.getToken())) {
+               this.altManager.getStorageManager().setSelectedRepository(repository);
+               repository.setSelectedAccount(account);
+               this.altManager.getSessionController().useAccount(account, false, true);
+               return;
+            }
+         }
+      }
    }
 
    public HypixelBanHandler getServerBanHandler() {

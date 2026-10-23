@@ -37,9 +37,9 @@ public final class CookieAccount extends AbstractAccount {
       for (int i = 0; i < astring.length; i++) {
          String s1 = astring[i];
          String[] astring1 = s1.split("\t");
-         if (astring1.length >= 5) {
+         if (astring1.length >= 6) {
             String s2 = astring1[0];
-            if (s2.endsWith("live.com")) {
+            if (CookieUtils.isLiveDomain(s2)) {
                stringbuilder.append(s1);
                if (i < astring.length - 1) {
                   stringbuilder.append("\n");

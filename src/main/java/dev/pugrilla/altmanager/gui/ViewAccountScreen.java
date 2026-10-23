@@ -1,7 +1,6 @@
 package dev.pugrilla.altmanager.gui;
 
 import dev.pugrilla.altmanager.account.AbstractAccount;
-import dev.pugrilla.altmanager.account.LoginResult;
 import dev.pugrilla.altmanager.AltManager;
 import dev.pugrilla.altmanager.auth.MinecraftServicesApi;
 import dev.pugrilla.altmanager.util.AltManagerUtils;
@@ -70,7 +69,7 @@ public final class ViewAccountScreen extends GuiScreen {
    }
 
    private void setVisibilityAndEnabled() {
-      boolean flag = this.taskLock.isLocked();
+      boolean flag = this.taskLock.isLocked() || this.altManager.getSessionController().isSwitching(this.account);
       this.setUsernameButton.enabled = !this.usernameField.getText().equals(this.originalUsername)
          && AltManagerUtils.MINECRAFT_USERNAME_PATTERN.matcher(this.usernameField.getText()).matches()
          && !flag;
@@ -134,14 +133,8 @@ public final class ViewAccountScreen extends GuiScreen {
                )
             );
       } else if (guibutton == this.refreshButton) {
-         this.taskLock.execute(() -> {
-            LoginResult result = this.account.login();
-            if (result.isSuccessfulLogin()) {
-               this.setStatus(EnumChatFormatting.GREEN + "Account session refreshed");
-            } else {
-               this.setStatus(result.getResponseType().getDescription());
-            }
-         });
+         this.altManager.getSessionController().refreshAccount(this.account);
+         this.setStatus("Refreshing session... status is shown in the Alt Manager.");
       } else if (guibutton == this.moveButton) {
          this.mc.displayGuiScreen(new SelectRepositoryScreen(this, this.altManager, repository -> {
             if (repository != null) {

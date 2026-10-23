@@ -56,6 +56,8 @@ public final class AltManagerScreen extends GuiScreen {
 
       this.invalidateAllViewingLists();
       this.resetButtons();
+      this.accountList.scrollBy(-this.accountList.getAmountScrolled());
+      this.previousRepository = this.getSelectedRepository();
    }
 
    public void onGuiClosed() {
@@ -210,9 +212,9 @@ public final class AltManagerScreen extends GuiScreen {
    public void scrollToAccount(AbstractAccount AbstractAccount) {
       AccountRepository AccountRepository = this.getSelectedRepository();
       if (AccountRepository != null) {
-         int i = AccountRepository.getAccountList().indexOf(AbstractAccount);
+         int i = AccountRepository.getViewingAccountList().indexOf(AbstractAccount);
          if (i != -1) {
-            int j = Math.max(i - 5, 3);
+            int j = Math.max(i - 2, 0);
             int k = j * this.accountList.getSlotHeight() - this.accountList.getAmountScrolled();
             this.accountList.scrollBy(k);
          }
@@ -225,10 +227,13 @@ public final class AltManagerScreen extends GuiScreen {
    }
 
    private void setButtonEnabledStatus() {
-      this.loginButton.enabled = this.storageManager.getSelectedAccount() != null;
-      this.viewButton.enabled = this.storageManager.getSelectedAccount() != null;
       AccountRepository AccountRepository = this.getSelectedRepository();
-      this.addButton.enabled = AccountRepository != null;
+      boolean unlocked = AccountRepository != null && AccountRepository.getEncryption().isDecrypted();
+      AbstractAccount account = this.storageManager.getSelectedAccount();
+      this.loginButton.enabled = unlocked && account != null && !this.altManager.getSessionController().isSwitching(account);
+      this.viewButton.enabled = unlocked && account != null;
+      this.addButton.enabled = unlocked;
+      this.loginButton.displayString = account != null && this.altManager.getSessionController().isSwitching(account) ? "Working..." : "Login";
       this.manageRepositoryButton.enabled = AccountRepository != null;
       this.multiplayerButton.visible = this.altManager.getStorageManager().isMultiplayerButtonVisible()
          && this.multiplayerButton.xPosition > this.cancelButton.xPosition + this.cancelButton.width + 4;
@@ -309,18 +314,14 @@ public final class AltManagerScreen extends GuiScreen {
 
    public void updateScreen() {
       this.setButtonText();
+      this.setButtonEnabledStatus();
       this.passwordField.updateCursorCounter();
       this.searchField.updateCursorCounter();
       AccountRepository AccountRepository = this.getSelectedRepository();
       if (AccountRepository != null) {
-         AccountRepository.invalidateViewingAccountList();
          AccountRepository.setLastAccessed(System.currentTimeMillis());
          if (this.previousRepository != AccountRepository) {
-            AbstractAccount AbstractAccount = AccountRepository.getSelectedAccount();
-            if (AbstractAccount != null) {
-               this.scrollToAccount(AbstractAccount);
-            }
-
+            this.accountList.scrollBy(-this.accountList.getAmountScrolled());
             this.previousRepository = AccountRepository;
          }
       }
@@ -344,6 +345,9 @@ public final class AltManagerScreen extends GuiScreen {
             if (i == 1) {
                if (!this.searchField.getText().isEmpty()) {
                   this.searchField.setText("");
+                  this.storageManager.setSearchTerm("");
+                  this.invalidateAllViewingLists();
+                  this.accountList.scrollBy(-this.accountList.getAmountScrolled());
                   return;
                }
 
@@ -360,6 +364,7 @@ public final class AltManagerScreen extends GuiScreen {
             this.getSelectedRepository().invalidateViewingAccountList();
             this.multiSelectionAccounts.clear();
             this.altManager.getStorageManager().setSearchTerm(this.searchField.getText());
+            this.accountList.scrollBy(-this.accountList.getAmountScrolled());
          } else if (i == 1) {
             if (!this.multiSelectionAccounts.isEmpty()) {
                this.multiSelectionAccounts.clear();
@@ -374,5 +379,9 @@ public final class AltManagerScreen extends GuiScreen {
 
    public AccountRepository getSelectedRepository() {
       return this.storageManager.getSelectedRepository();
+   }
+
+   public void setStatus(String message) {
+      this.statusRenderer.setStatus(message, 5000);
    }
 }

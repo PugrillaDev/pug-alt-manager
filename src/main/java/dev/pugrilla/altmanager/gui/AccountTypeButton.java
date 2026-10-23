@@ -66,7 +66,7 @@ class AccountTypeButton {
    }
 
    public void mouseClicked(int i, int j, int k) {
-      if (k == 0 && this.isHovered(i, j) && !this.isSelected()) {
+      if (k == 0 && !this.parent.isBusy() && this.isHovered(i, j) && !this.isSelected()) {
          this.parent.getAltManager().getStorageManager().setSelectedAddAccountType(this.accountType);
          new GuiButton(0, 0, 0, null).playPressSound(this.parent.mc.getSoundHandler());
          this.parent.refreshAccountTypeControls();

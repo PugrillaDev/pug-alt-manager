@@ -85,36 +85,47 @@ public final class CreateProfileScreen extends GuiScreen {
          this.back();
       } else if (guibutton.id == 2) {
          this.creationSubmitted = true;
+         String requestedUsername = this.usernameField.getText();
          this.taskLock.execute(() -> {
-            String username = this.usernameField.getText();
-            int responseCode = MinecraftServicesApi.createProfile(this.account.getAccessToken(), username);
-            switch (responseCode) {
-               case 200:
-                  UUID uuid;
-                  try {
-                     uuid = AltManagerUtils.parseUuid(MinecraftServicesApi.getUuidForUsername(username));
-                  } catch (IOException exception) {
-                     this.statusRenderer.setStatus("Failed to get UUID. Try adding the account again.", 1500);
-                     return;
-                  }
+            try {
+               String username = requestedUsername;
+               int responseCode = MinecraftServicesApi.createProfile(this.account.getAccessToken(), username);
+               switch (responseCode) {
+                  case 200:
+                     UUID uuid;
+                     try {
+                        uuid = AltManagerUtils.parseUuid(MinecraftServicesApi.getUuidForUsername(username));
+                     } catch (IOException exception) {
+                        this.statusRenderer.setStatus("Failed to get UUID. Try adding the account again.", 1500);
+                        return;
+                     }
 
-                  this.account.setUsername(username);
-                  this.account.setUuid(uuid);
-                  this.repository.addAccount(this.account);
-                  this.altManager.getStorageManager().setAutoSaveRequired();
-                  this.back();
-                  break;
-               case 400:
-                  this.statusRenderer.setStatus("This username is invalid, or something went wrong.", 1000);
-                  break;
-               case 401:
-                  this.statusRenderer.setStatus("Unauthorized, try again later.", 1000);
-                  break;
-               case 429:
-                  this.statusRenderer.setStatus("Too many requests, change your IP address or try again later.", 1000);
-                  break;
-               default:
-                  this.statusRenderer.setStatus("Error creating profile: " + responseCode, 1000);
+                     if (uuid == null) {
+                        this.statusRenderer.setStatus("Could not resolve the new profile. Try adding the account again.", 3000);
+                        return;
+                     }
+                     this.mc.addScheduledTask(() -> {
+                        this.account.setUsername(username);
+                        this.account.setUuid(uuid);
+                        this.repository.addAccount(this.account);
+                        this.altManager.getStorageManager().setAutoSaveRequired();
+                        this.back();
+                     });
+                     break;
+                  case 400:
+                     this.statusRenderer.setStatus("This username is invalid, or something went wrong.", 1000);
+                     break;
+                  case 401:
+                     this.statusRenderer.setStatus("Unauthorized, try again later.", 1000);
+                     break;
+                  case 429:
+                     this.statusRenderer.setStatus("Too many requests, change your IP address or try again later.", 1000);
+                     break;
+                  default:
+                     this.statusRenderer.setStatus("Error creating profile: " + responseCode, 1000);
+               }
+            } finally {
+               this.mc.addScheduledTask(() -> this.creationSubmitted = false);
             }
          });
       }

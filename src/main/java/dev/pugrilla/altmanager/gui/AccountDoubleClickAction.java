@@ -5,7 +5,8 @@ import dev.pugrilla.altmanager.account.AbstractAccount;
 import java.util.function.Consumer;
 public enum AccountDoubleClickAction {
    LOGIN("Login", "set your Minecraft session to it", false, AbstractAccount::setMinecraftSessionAndRefreshIfNeeded),
-   REFRESH_SESSION("Refresh Session", "log into it again", true, AbstractAccount::login),
+   REFRESH_SESSION("Refresh Session", "log into it again", false,
+      account -> account.getRepository().getAltManager().getSessionController().refreshAccount(account)),
    CHECK_BAN("Ban Check", "check for a server ban", true, AbstractAccount::startBanCheck),
    DELETE("Delete", "delete the account", false, account -> account.getRepository().deleteAccount(account)),
    VIEW("View", "open the view account menu", false, account -> net.minecraft.client.Minecraft.getMinecraft().displayGuiScreen(

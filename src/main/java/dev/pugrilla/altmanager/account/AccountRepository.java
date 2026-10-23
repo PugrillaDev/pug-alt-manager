@@ -115,9 +115,7 @@ public final class AccountRepository implements IGuiListEntry {
             this.selectedAccount = this.accounts.isEmpty() ? null : this.accounts.get(0);
          }
          AbstractAccount.setRepository(null);
-         if (this.altManager != null) {
-            this.altManager.getStorageManager().setAutoSaveRequired();
-         }
+         this.requestAutoSave();
          this.invalidateViewingAccountList();
       }
    }
@@ -189,8 +187,16 @@ public final class AccountRepository implements IGuiListEntry {
          }
 
          this.selectedAccount = AbstractAccount;
-         if (this.altManager != null) {
-            this.altManager.getStorageManager().setAutoSaveRequired();
+         this.requestAutoSave();
+      }
+   }
+
+   private void requestAutoSave() {
+      // Restoring accounts happens before AltManager publishes its storageManager field.
+      if (this.altManager != null) {
+         dev.pugrilla.altmanager.storage.FileStorageManager storage = this.altManager.getStorageManager();
+         if (storage != null) {
+            storage.setAutoSaveRequired();
          }
       }
    }

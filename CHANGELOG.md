@@ -2,6 +2,20 @@
 
 All notable changes to Pug Alt Manager are documented here.
 
+## 1.2.1 - 2026-10-23
+
+### Fixed
+
+- Prevent a startup crash when restoring a saved account selection before the storage manager finishes construction
+- Treat unexpected runtime failures as program errors instead of attempting database recovery or reporting account corruption
+- Remove the misleading instruction to delete account data when loading fails
+
+### Verified
+
+- Regression test reproduces the 1.2 crash using real manager construction and a populated account database
+- All 34 regression tests pass; the production Forge client starts and restarts with a populated account database and restores the selected account
+- Test account storage is isolated from the user's APPDATA directory
+
 ## 1.2 - 2026-10-23
 
 ### Added

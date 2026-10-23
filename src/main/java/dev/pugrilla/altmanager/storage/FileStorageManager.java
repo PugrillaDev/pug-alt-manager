@@ -83,7 +83,7 @@ public final class FileStorageManager implements StorageManager {
          this.load();
       } catch (IOException ioexception) {
          throw new RuntimeException(
-            String.format("Account list is corrupted. Delete the file at %s if you want to continue.", this.accountsFile.getAbsolutePath()), ioexception
+            String.format("Could not load the account database at %s. Account files were preserved; inspect the underlying error before restoring a backup.", this.accountsFile.getAbsolutePath()), ioexception
          );
       }
 
@@ -192,7 +192,7 @@ public final class FileStorageManager implements StorageManager {
       }
       try {
          this.fromBytes(Files.readAllBytes(this.accountsFile.toPath()));
-      } catch (IOException | RuntimeException failure) {
+      } catch (IOException failure) {
          this.repositories.clear();
          this.banExpiries.clear();
          this.selectedRepository = null;
@@ -201,7 +201,8 @@ public final class FileStorageManager implements StorageManager {
          }
          try {
             this.fromBytes(Files.readAllBytes(this.accountsBackupFile.toPath()));
-         } catch (IOException | RuntimeException backupFailure) {
+         } catch (IOException backupFailure) {
+            backupFailure.addSuppressed(failure);
             throw new IOException("Cannot read account database or backup", backupFailure);
          }
          Files.copy(this.accountsFile.toPath(), new File(this.storageDirectory, "accounts.dat.corrupt-" + System.currentTimeMillis()).toPath());
@@ -211,52 +212,56 @@ public final class FileStorageManager implements StorageManager {
    }
 
    private void fromBytes(byte[] abyte) throws IOException {
-      DataInputStream datainputstream = new DataInputStream(new ByteArrayInputStream(abyte));
-      int i = datainputstream.readInt();
-      if (i != 15837929) {
-         throw new IOException(String.format("Corrupted magic header: %s", Integer.toHexString(i)));
-      }
-
-      int j = datainputstream.readInt();
-      if (j < 0 || j > STORAGE_VERSION) {
-         throw new IOException(String.format("Loading accounts from an incompatible version: %d, current is %d", j, STORAGE_VERSION));
-      }
-
-      this.loadedStorageVersion = j;
-
-      long k = datainputstream.readLong();
-      this.selectedAddAccountType = AccountType.values()[datainputstream.readUnsignedByte()];
-      this.lastCookieFilePath = datainputstream.readUTF();
-      this.lastSkinFilePath = datainputstream.readUTF();
-      this.skinVariant = SkinVariant.values()[datainputstream.readUnsignedByte()];
-      this.accountSortMode = AccountSortMode.values()[datainputstream.readUnsignedByte()];
-      this.searchTerm = datainputstream.readUTF();
-      int l = datainputstream.readInt();
-      int i1 = readCount(datainputstream, 27);
-
-      for (int j1 = 0; j1 < i1; j1++) {
-         AccountRepository AccountRepository = readRepository(this.altManager, datainputstream, j);
-         this.repositories.add(AccountRepository);
-         if (j1 == l) {
-            this.setSelectedRepository(AccountRepository);
+      try {
+         DataInputStream datainputstream = new DataInputStream(new ByteArrayInputStream(abyte));
+         int i = datainputstream.readInt();
+         if (i != 15837929) {
+            throw new IOException(String.format("Corrupted magic header: %s", Integer.toHexString(i)));
          }
+
+         int j = datainputstream.readInt();
+         if (j < 0 || j > STORAGE_VERSION) {
+            throw new IOException(String.format("Loading accounts from an incompatible version: %d, current is %d", j, STORAGE_VERSION));
+         }
+
+         this.loadedStorageVersion = j;
+
+         long k = datainputstream.readLong();
+         this.selectedAddAccountType = AccountType.values()[datainputstream.readUnsignedByte()];
+         this.lastCookieFilePath = datainputstream.readUTF();
+         this.lastSkinFilePath = datainputstream.readUTF();
+         this.skinVariant = SkinVariant.values()[datainputstream.readUnsignedByte()];
+         this.accountSortMode = AccountSortMode.values()[datainputstream.readUnsignedByte()];
+         this.searchTerm = datainputstream.readUTF();
+         int l = datainputstream.readInt();
+         int i1 = readCount(datainputstream, 27);
+
+         for (int j1 = 0; j1 < i1; j1++) {
+            AccountRepository AccountRepository = readRepository(this.altManager, datainputstream, j);
+            this.repositories.add(AccountRepository);
+            if (j1 == l) {
+               this.setSelectedRepository(AccountRepository);
+            }
+         }
+
+         if (!this.repositories.isEmpty() && this.getSelectedRepository() == null) {
+            this.setSelectedRepository((AccountRepository)this.repositories.get(0));
+         }
+
+         int k1 = readCount(datainputstream, 24);
+
+         for (int l1 = 0; l1 < k1; l1++) {
+            UUID uuid = new UUID(datainputstream.readLong(), datainputstream.readLong());
+            this.banExpiries.put(uuid, datainputstream.readLong());
+         }
+
+         this.accountDoubleClickAction = AccountDoubleClickAction.values()[datainputstream.readInt()];
+         this.multiplayerButtonVisible = datainputstream.readBoolean();
+         this.showLoggedInUser = datainputstream.readBoolean();
+         this.autoRefreshSession = datainputstream.available() == 0 || datainputstream.readBoolean();
+      } catch (IllegalArgumentException | IndexOutOfBoundsException malformedData) {
+         throw new IOException("Invalid value in account database", malformedData);
       }
-
-      if (!this.repositories.isEmpty() && this.getSelectedRepository() == null) {
-         this.setSelectedRepository((AccountRepository)this.repositories.get(0));
-      }
-
-      int k1 = readCount(datainputstream, 24);
-
-      for (int l1 = 0; l1 < k1; l1++) {
-         UUID uuid = new UUID(datainputstream.readLong(), datainputstream.readLong());
-         this.banExpiries.put(uuid, datainputstream.readLong());
-      }
-
-      this.accountDoubleClickAction = AccountDoubleClickAction.values()[datainputstream.readInt()];
-      this.multiplayerButtonVisible = datainputstream.readBoolean();
-      this.showLoggedInUser = datainputstream.readBoolean();
-      this.autoRefreshSession = datainputstream.available() == 0 || datainputstream.readBoolean();
    }
    private static int readCount(DataInputStream input, int minimumEntrySize) throws IOException {
       int count = input.readInt();

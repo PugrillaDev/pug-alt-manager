@@ -49,3 +49,10 @@ jar {
         )
     }
 }
+
+// Construction tests must never load or write the user's real account database.
+test {
+    def isolatedAppData = file("$buildDir/test-appdata").absolutePath
+    environment 'APPDATA', isolatedAppData
+    systemProperty 'pugaltmanager.testAppData', isolatedAppData
+}

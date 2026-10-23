@@ -2,6 +2,14 @@
 
 All notable changes to Pug Alt Manager are documented here.
 
+## 1.2.2 - 2026-10-23
+
+### Fixed
+
+- Render player heads at full opacity independently of account-row selection and hover opacity
+- Preserve the skin's own transparent hat pixels without making opaque hair translucent or washing out face colors
+- Verify production-rendered pixels against a cached skin across normal, hovered, and selected account rows
+
 ## 1.2.1 - 2026-10-23
 
 ### Fixed

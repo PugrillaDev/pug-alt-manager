@@ -301,7 +301,6 @@ public abstract class AbstractAccount implements IGuiListEntry {
 
       if (this.playerHead != null) {
          this.playerHead.ensureSkinDownloaded();
-         this.playerHead.setAlpha(short1 / 255.0F);
          this.playerHead.drawHead(i, j);
       }
    }

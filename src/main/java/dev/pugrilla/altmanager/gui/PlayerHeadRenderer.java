@@ -13,16 +13,11 @@ public final class PlayerHeadRenderer {
    private final UUID uuid;
    private final AltManager altManager;
    private ResourceLocation skinResource;
-   private float alpha = 1.0F;
 
    public PlayerHeadRenderer(String username, UUID uuid, AltManager manager) {
       this.username = username;
       this.uuid = uuid;
       this.altManager = manager;
-   }
-
-   public void setAlpha(float alpha) {
-      this.alpha = Math.max(0.0F, Math.min(1.0F, alpha));
    }
 
    public void drawHeadScaled(float scale, float x, float y) {
@@ -34,8 +29,9 @@ public final class PlayerHeadRenderer {
 
    public void drawHead(int x, int y) {
       Gui.drawRect(x, y, x + 32, y + 32, -1601138544);
-      GlStateManager.color(1.0F, 1.0F, 1.0F, this.alpha);
-      this.alpha = 1.0F;
+      // Fade the row background, never the face and hat separately: doing so
+      // makes opaque hat pixels translucent and exposes the base face underneath.
+      GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
       GlStateManager.enableBlend();
       Minecraft.getMinecraft().getTextureManager().bindTexture(this.skinResource == null ? DefaultPlayerSkin.getDefaultSkin(this.uuid) : this.skinResource);
       Gui.drawModalRectWithCustomSizedTexture(x, y, 32.0F, 32.0F, 32, 32, 256.0F, 256.0F);
